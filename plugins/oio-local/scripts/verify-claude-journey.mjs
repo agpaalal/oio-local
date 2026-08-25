@@ -11,6 +11,7 @@ import { DatabaseSync } from "node:sqlite";
 import { releaseTreeHash } from "../lib/release-qualification.mjs";
 import { proveClaudeChildExecution } from "../lib/claude-child-evidence.mjs";
 import { runBoundedProcess } from "../lib/bounded-process.mjs";
+import { extractUniqueJsonMatchingSchema } from "../lib/claude-readback.mjs";
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const claudeBinary = process.env.OIO_LOCAL_CLAUDE_BINARY ??
@@ -84,8 +85,9 @@ async function runClaude({ environment, isolatedPlugin, project, prompt, schema,
   const events = result.stdout.split("\n").filter((line) => line.trim()).map((line) => JSON.parse(line));
   const envelope = events.findLast((event) => event.type === "result");
   assert(envelope, "Claude omitted its result event.");
-  assert(envelope.structured_output, `Claude omitted structured output: ${envelope.result}`);
-  return { envelope, events, output: envelope.structured_output };
+  const output = envelope.structured_output ??
+    extractUniqueJsonMatchingSchema(envelope.result ?? "", schema);
+  return { envelope, events, output };
 }
 
 const root = await mkdtemp(path.join(os.tmpdir(), "oio-local-claude-journey-"));
