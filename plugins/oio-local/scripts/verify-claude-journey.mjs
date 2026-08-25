@@ -268,6 +268,19 @@ esac
       execution.output.deliverable.sha256,
     "Claude result hash did not match the deliverable readback.",
   );
+  const databaseForResult = new DatabaseSync(path.join(project, ".oio-local/state.sqlite3"), { readOnly: true });
+  let storedResult;
+  try {
+    storedResult = databaseForResult.prepare(
+      "SELECT deliverable_sha256 FROM results WHERE request_id = ?",
+    ).get(first.output.requestId);
+  } finally {
+    databaseForResult.close();
+  }
+  assert(
+    storedResult?.deliverable_sha256 === execution.output.deliverable.sha256,
+    "Claude execution readback did not match the current stored result identity.",
+  );
 
   const closure = await runClaude({
     environment,
@@ -275,8 +288,8 @@ esac
     project,
     sessionId,
     prompt: text(
-      `Alejandro accepts the exact result ${execution.output.deliverable.sha256}. Record acceptance and close this request. Return exact closure readback only.`,
-      `Alejandro acepta el resultado exacto ${execution.output.deliverable.sha256}. Registra la aceptación y cierra la solicitud. Devuelve únicamente la lectura exacta del cierre.`,
+      `Alejandro accepts the exact result ${execution.output.deliverable.sha256} for request ${first.output.requestId}. Run exactly: node ${isolatedPlugin}/scripts/claude/journey.mjs accept --project ${project} --request-id ${first.output.requestId} --result-hash ${execution.output.deliverable.sha256} --human Alejandro. Do not substitute any identity. Return the exact adapter closure readback only.`,
+      `Alejandro acepta el resultado exacto ${execution.output.deliverable.sha256} para la solicitud ${first.output.requestId}. Ejecuta exactamente: node ${isolatedPlugin}/scripts/claude/journey.mjs accept --project ${project} --request-id ${first.output.requestId} --result-hash ${execution.output.deliverable.sha256} --human Alejandro. No sustituyas ninguna identidad. Devuelve únicamente la lectura exacta de cierre del adaptador.`,
     ),
     schema: {
       type: "object",

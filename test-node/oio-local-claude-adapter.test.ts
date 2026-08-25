@@ -150,6 +150,16 @@ describe("OIO Local Claude Code adapter", () => {
     expect(agent).toContain("Return only the bounded result contract");
   });
 
+  it("binds native acceptance to the exact request and adapter command", async () => {
+    const verifier = await readFile(
+      path.join(repositoryRoot, "plugins/oio-local/scripts/verify-claude-journey.mjs"),
+      "utf8",
+    );
+    expect(verifier).toContain("scripts/claude/journey.mjs accept");
+    expect(verifier).toContain("--request-id ${first.output.requestId}");
+    expect(verifier).toContain("--result-hash ${execution.output.deliverable.sha256}");
+  });
+
   it("accepts the exact bounded result returned by the live Claude Step Agent", async () => {
     const packet = JSON.parse(await readFile(path.join(
       repositoryRoot,
