@@ -350,10 +350,34 @@ async function recordInventory(project, harness, language, compatibility, enviro
     stateDirectory,
     "pre-install-inventory.json",
   );
+  const hostState = {
+    hostBeforeInstall: preinstallState?.hostBeforeInstall ?? { marketplace: null, plugin: null },
+    hostCaptureStatus: preinstallState ? "verified" : "missing",
+    hostSnapshotFingerprint: preinstallState?.snapshotFingerprint ?? null,
+  };
   try {
-    return await readJson(inventoryPath);
+    const existing = await readJson(inventoryPath);
+    const harnessInventories = existing.harnessInventories ?? {
+      [existing.harness]: {
+        hostBeforeInstall: existing.hostBeforeInstall,
+        hostCaptureStatus: existing.hostCaptureStatus,
+        hostSnapshotFingerprint: existing.hostSnapshotFingerprint,
+      },
+    };
+    if (!harnessInventories[harness]) harnessInventories[harness] = hostState;
+    const activeHostState = harnessInventories[harness];
+    const updated = {
+      ...existing,
+      harness,
+      harnessInventories,
+      hostBeforeInstall: activeHostState.hostBeforeInstall,
+      hostCaptureStatus: activeHostState.hostCaptureStatus,
+      hostSnapshotFingerprint: activeHostState.hostSnapshotFingerprint,
+      language,
+    };
+    await atomicJsonWrite(inventoryPath, updated);
+    return updated;
   } catch {
-    const hostBeforeInstall = preinstallState?.hostBeforeInstall ?? { marketplace: null, plugin: null };
     const inventory = {
       admittedSkills: compatibility.skills.map((skill) => ({
         name: skill.name,
@@ -367,9 +391,8 @@ async function recordInventory(project, harness, language, compatibility, enviro
           : null,
         mutatedBySetup: false,
       },
-      hostBeforeInstall,
-      hostCaptureStatus: preinstallState ? "verified" : "missing",
-      hostSnapshotFingerprint: preinstallState?.snapshotFingerprint ?? null,
+      harnessInventories: { [harness]: hostState },
+      ...hostState,
       inventoryBoundary: "before-project-setup",
       oioOwnedPathsBeforeInstall,
       plannedOioOwnedPaths,
@@ -539,10 +562,10 @@ export async function setupProject({
     status: "ready",
     workspace: absoluteProject,
   };
-  initializeDatabase(databasePath, result);
-  await chmod(databasePath, 0o600);
   await atomicJsonWrite(path.join(stateDirectory, "health.json"), result);
   await writeReadableStatus(stateDirectory, language);
+  initializeDatabase(databasePath, result);
+  await chmod(databasePath, 0o600);
   return result;
 }
 
@@ -555,14 +578,31 @@ export async function readProjectHealth({
     absoluteProject,
     ".oio-local/state.sqlite3",
   );
-  const result = readDatabaseHealth(databasePath);
+  let result;
+  try {
+    result = readDatabaseHealth(databasePath);
+  } catch {
+    throw new SetupHold("HEALTH_STATE_UNREADABLE", {
+      en: {
+        message: "OIO Local could not read its verified local state.",
+        recoveryAction: "Preserve the project and restore a verified backup before continuing.",
+      },
+      es: {
+        message: "OIO Local no pudo leer su estado local verificado.",
+        recoveryAction: "Conserva el proyecto y restaura un respaldo verificado antes de continuar.",
+      },
+    });
+  }
   const currentSkillEvidence = await verifySkillBundle(result.language);
   const currentDoppler = probeDoppler(environment, result.language);
   probeReviewArtifactRuntime(environment, result.language);
+  const currentPlugin = await readJson(manifestPaths[result.harness]);
   if (
     JSON.stringify(currentSkillEvidence) !== JSON.stringify(result.skillEvidence) ||
     currentDoppler.project !== result.doppler.project ||
-    currentDoppler.config !== result.doppler.config
+    currentDoppler.config !== result.doppler.config ||
+    currentPlugin.name !== result.plugin.name ||
+    currentPlugin.version !== result.plugin.version
   ) {
     const messages = localized(
       {

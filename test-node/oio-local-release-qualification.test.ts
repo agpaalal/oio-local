@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { cp, mkdtemp, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -52,6 +52,10 @@ function journey(
 }
 
 describe("OIO Local release qualification", () => {
+  it("requires a Node release with unflagged node:sqlite", async () => {
+    const packageJson = JSON.parse(await readFile(path.resolve("package.json"), "utf8"));
+    expect(packageJson.engines.node).toBe(">=22.13.0");
+  });
   it("binds the exact safe plugin and all four native journey seams", async () => {
     const calls: string[] = [];
     const result = await qualifyReleaseCandidate({

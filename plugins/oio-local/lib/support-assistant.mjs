@@ -50,7 +50,14 @@ export function validateAgentResult(result, expectedPacket) {
       "Run S1 with the returned child packet and preserve its task and agent identity.",
     );
   }
-  if (/\b(?:refund(?:ed)?|payment) (?:has been|was) (?:issued|refunded|completed)\b/i.test(result.reply)) {
+  const unauthorizedExternalClaim = [
+    /\b(?:refund|payment)\s+(?:has\s+been|was|is)\s+(?:issued|processed|refunded|completed|complete|sent)\b/iu,
+    /\b(?:we|i(?:'ve|\s+have)?|our\s+team)\s+(?:have\s+)?(?:issued|processed|completed|sent)\s+(?:a|the|your)?\s*(?:refund|payment)\b/iu,
+    /\b(?:i(?:'ve|\s+have)?|we(?:'ve|\s+have)?)\s+refunded\s+(?:your|the)\b/iu,
+    /\b(?:reembolso|pago)\s+(?:fue|ha\s+sido|está)\s+(?:emitido|procesado|reembolsado|completado|completo|enviado)\b/iu,
+    /\b(?:emitimos|procesamos|completamos|enviamos)\s+(?:el|un|tu)?\s*(?:reembolso|pago)\b/iu,
+  ].some((pattern) => pattern.test(result.reply));
+  if (unauthorizedExternalClaim) {
     throw new JourneyHold(
       "UNAUTHORIZED_EXTERNAL_CLAIM",
       "The draft claims that an external refund or payment action already occurred.",

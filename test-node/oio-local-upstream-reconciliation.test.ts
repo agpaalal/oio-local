@@ -188,6 +188,24 @@ describe("OIO Local upstream skill reconciliation", () => {
     expect(accepted).toMatchObject({ decision: "accepted", health: "passed", rollbackProof: "passed" });
   });
 
+  it("rejects receipt ids that can escape the candidate receipt directory", async () => {
+    const activePlugin = await copyPlugin();
+    const upstream = await materializeUpstream(activePlugin); await commitChange(upstream);
+    const candidate = await createUpstreamCandidate({
+      activePluginRoot: activePlugin,
+      candidateRoot: await temporaryDirectory("oio-local-candidates-"),
+      upstreamRoot: upstream.root,
+    });
+    const qualified = await qualification(candidate.directory);
+    await expect(acceptUpstreamCandidate({
+      activePluginRoot: activePlugin,
+      approvalFingerprint: qualified.approvalFingerprint,
+      candidateDirectory: candidate.directory,
+      human: "Alejandro",
+      receiptId: "../candidate",
+    })).rejects.toThrow("safe filename component");
+  });
+
   it("rejects post-qualification bundle or metadata mutation", async () => {
     const activePlugin = await copyPlugin();
     const upstream = await materializeUpstream(activePlugin); await commitChange(upstream);

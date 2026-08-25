@@ -45,7 +45,8 @@ export function createSuccessorRequestRecord({
   title,
 }) {
   withState(project, (database) => transaction(database, () => {
-    requireRequest(database, predecessorRequestId);
+    const predecessor = requireRequest(database, predecessorRequestId);
+    requireState(predecessor, [RequestState.CLOSED]);
     const createdAt = now();
     database.prepare(`
       INSERT INTO requests (
@@ -66,6 +67,15 @@ export function createSuccessorRequestRecord({
         predecessor_request_id, successor_request_id, relation, created_at
       ) VALUES (?, ?, 'MATERIAL_OUTCOME_CHANGE', ?)
     `).run(predecessorRequestId, requestId, createdAt);
+  }));
+}
+
+export function deleteUnstartedRequestRecord(project, requestId) {
+  withState(project, (database) => transaction(database, () => {
+    const request = requireRequest(database, requestId);
+    requireState(request, [RequestState.INTAKE]);
+    database.prepare("DELETE FROM request_links WHERE successor_request_id = ?").run(requestId);
+    database.prepare("DELETE FROM requests WHERE id = ?").run(requestId);
   }));
 }
 
@@ -358,6 +368,19 @@ export function prepareHarnessTransferRecord({
         "Read back the request state and stop active execution before preparing the handoff.",
       );
     }
+    if (request.state !== RequestState.CLOSED) {
+      const unresolvedHold = database.prepare(`
+        SELECT id FROM holds WHERE request_id = ? AND resolved_at IS NULL
+        ORDER BY occurred_at DESC LIMIT 1
+      `).get(requestId);
+      if (!unresolvedHold) {
+        throw new JourneyHold(
+          "HARNESS_TRANSFER_NOT_ALLOWED",
+          "The active request has no unresolved workflow hold that permits a harness transfer.",
+          "Continue in the owning harness, or first reach and record a real workflow hold.",
+        );
+      }
+    }
     const authority = transferAuthority(database, requestId);
     if (!authority || authority !== authorityFingerprint) {
       throw new JourneyHold(
@@ -561,6 +584,13 @@ export function approveCurrentArtifact({
   type,
 }) {
   return withState(project, (database) => transaction(database, () => {
+    if (typeof human !== "string" || human.trim().length === 0) {
+      throw new JourneyHold(
+        "HUMAN_IDENTITY_REQUIRED",
+        "Approval requires a non-empty Human identity.",
+        "Provide the approving Human's name and retry the exact approval.",
+      );
+    }
     const request = requireRequest(database, requestId);
     requireState(request, [expectedState]);
     const artifact = currentArtifact(database, requestId, type);
@@ -575,7 +605,7 @@ export function approveCurrentArtifact({
       INSERT OR IGNORE INTO approvals (
         id, artifact_id, artifact_fingerprint, human, decision, approved_at
       ) VALUES (?, ?, ?, ?, 'AGREE', ?)
-    `).run(id("APR"), artifact.id, fingerprint, human, now());
+    `).run(id("APR"), artifact.id, fingerprint, human.trim(), now());
     return { artifact, request };
   }));
 }
@@ -602,10 +632,11 @@ export function recordReadyPlan({ modelOverride, packet, project, requestId, ste
     const request = requireRequest(database, requestId);
     const specification = currentArtifact(database, requestId, "SPECIFICATION");
     requireApproval(database, specification);
+    const durableTicketId = `${requestId}:BUILD-SUPPORT-ASSISTANT-V0`;
     database.prepare(`
       INSERT OR IGNORE INTO tickets (id, request_id, title, status, created_at)
-      VALUES ('BUILD-SUPPORT-ASSISTANT-V0', ?, 'Build support-request assistant V0', 'READY', ?)
-    `).run(requestId, now());
+      VALUES (?, ?, 'Build support-request assistant V0', 'READY', ?)
+    `).run(durableTicketId, requestId, now());
     for (const [ordinal, step] of steps.entries()) {
       database.prepare(`
         INSERT OR REPLACE INTO steps (
@@ -731,8 +762,34 @@ export function completeExecution({ deliverable, project, requestId, result, ste
 export function acceptResult({ human, project, requestId, resultHash }) {
   return withState(project, (database) => transaction(database, () => {
     let request = requireRequest(database, requestId);
-    requireState(request, [RequestState.PROOF_REVIEW]);
+    if (typeof human !== "string" || human.trim().length === 0) {
+      throw new JourneyHold(
+        "HUMAN_IDENTITY_REQUIRED",
+        "Acceptance requires a non-empty Human identity.",
+        "Provide the accepting Human's name and retry the exact result acceptance.",
+      );
+    }
     const result = database.prepare("SELECT * FROM results WHERE request_id = ?").get(requestId);
+    if (request.state === RequestState.CLOSED) {
+      if (
+        result?.deliverable_sha256 === resultHash &&
+        result.accepted_by === human.trim() && result.accepted_at
+      ) {
+        return {
+          acceptedAt: result.accepted_at,
+          human: human.trim(),
+          requestId,
+          resultHash,
+          state: RequestState.CLOSED,
+        };
+      }
+      throw new JourneyHold(
+        "RESULT_IDENTITY_MISMATCH",
+        "The closed request does not match this acceptance identity.",
+        "Read back the closed result and its accepting Human before retrying.",
+      );
+    }
+    requireState(request, [RequestState.PROOF_REVIEW]);
     if (!result || result.deliverable_sha256 !== resultHash) {
       throw new JourneyHold(
         "RESULT_IDENTITY_MISMATCH",
@@ -743,7 +800,7 @@ export function acceptResult({ human, project, requestId, resultHash }) {
     const acceptedAt = now();
     database.prepare(`
       UPDATE results SET accepted_by = ?, accepted_at = ? WHERE request_id = ?
-    `).run(human, acceptedAt, requestId);
+    `).run(human.trim(), acceptedAt, requestId);
     request = transition(
       database,
       request,
@@ -751,6 +808,6 @@ export function acceptResult({ human, project, requestId, resultHash }) {
       "Exact result accepted by the Human.",
     );
     transition(database, request, RequestState.CLOSED, "Accepted request closed.");
-    return { acceptedAt, human, requestId, resultHash, state: RequestState.CLOSED };
+    return { acceptedAt, human: human.trim(), requestId, resultHash, state: RequestState.CLOSED };
   }));
 }

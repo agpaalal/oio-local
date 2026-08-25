@@ -12,6 +12,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { DatabaseSync } from "node:sqlite";
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -134,6 +135,27 @@ afterEach(async () => {
 });
 
 describe("OIO Local Codex installation seam", () => {
+  it("returns a structured setup hold before project initialization", async () => {
+    const projectDirectory = await temporaryDirectory("oio-local-not-set-up-");
+    const requestPath = path.join(projectDirectory, "request.json");
+    await writeFile(requestPath, JSON.stringify({
+      customer: "Jamie",
+      email: "jamie@example.com",
+      message: "Please help.",
+      orderId: "ORD-1",
+      subject: "Help",
+    }));
+    const result = await runJson(
+      path.join(repositoryRoot, "plugins/oio-local/scripts/codex/journey.mjs"),
+      ["start", "--project", projectDirectory, "--request", requestPath],
+      process.env,
+    );
+    expect(result).toMatchObject({
+      exitCode: 2,
+      output: { code: "SETUP_REQUIRED", state: "HELD" },
+    });
+  });
+
   it("is discoverable through a clean Codex plugin host", async () => {
     const verification = await runJson(
       hostVerificationScript,
@@ -221,6 +243,29 @@ describe("OIO Local Codex installation seam", () => {
     expect(health.exitCode).toBe(0);
     expect(health.output).toEqual(setup.output);
 
+    const database = new DatabaseSync(path.join(projectDirectory, ".oio-local/state.sqlite3"));
+    try {
+      const row = database.prepare(
+        "SELECT health_json FROM installation WHERE singleton = 1",
+      ).get() as { health_json: string };
+      const changed = JSON.parse(row.health_json);
+      changed.plugin.version = "0.0.0-stale";
+      database.prepare(
+        "UPDATE installation SET health_json = ? WHERE singleton = 1",
+      ).run(JSON.stringify(changed));
+    } finally {
+      database.close();
+    }
+    const staleHealth = await runJson(
+      healthScript,
+      ["--project", projectDirectory],
+      environment,
+    );
+    expect(staleHealth).toMatchObject({
+      exitCode: 2,
+      output: { code: "HEALTH_IDENTITY_CHANGED", status: "held" },
+    });
+
     const inventory = JSON.parse(
       await readFile(
         path.join(projectDirectory, ".oio-local/pre-install-inventory.json"),
@@ -244,6 +289,27 @@ describe("OIO Local Codex installation seam", () => {
         ".oio-local/health.json",
       ]),
       secretValuesRecorded: false,
+    });
+  });
+
+  it("returns a structured hold when verified health state is corrupt", async () => {
+    const projectDirectory = await temporaryDirectory("oio-local-corrupt-health-");
+    const dopplerDirectory = await fakeDopplerDirectory();
+    const environment = {
+      ...process.env,
+      PATH: `${dopplerDirectory}:${process.env.PATH ?? ""}`,
+    };
+    const setup = await runJson(
+      setupScript,
+      ["--project", projectDirectory, "--language", "en", "--harness", "codex"],
+      environment,
+    );
+    expect(setup.exitCode).toBe(0);
+    await writeFile(path.join(projectDirectory, ".oio-local/state.sqlite3"), "not sqlite", "utf8");
+    const health = await runJson(healthScript, ["--project", projectDirectory], environment);
+    expect(health).toMatchObject({
+      exitCode: 2,
+      output: { code: "HEALTH_STATE_UNREADABLE", status: "held" },
     });
   });
 

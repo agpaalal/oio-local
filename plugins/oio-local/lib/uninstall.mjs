@@ -293,15 +293,26 @@ export async function readUninstallLanguage(project) {
 async function inventoryFor(project) {
   try {
     const inventory = await readJson(path.join(project, ".oio-local/pre-install-inventory.json"));
+    const harnessInventories = inventory.harnessInventories ?? {
+      [inventory.harness]: {
+        hostBeforeInstall: inventory.hostBeforeInstall,
+        hostCaptureStatus: inventory.hostCaptureStatus,
+        hostSnapshotFingerprint: inventory.hostSnapshotFingerprint,
+      },
+    };
     if (
       !["codex", "claude"].includes(inventory.harness) ||
       inventory.inventoryBoundary !== "before-project-setup" ||
-      inventory.hostCaptureStatus !== "verified" ||
-      !/^[a-f0-9]{64}$/u.test(inventory.hostSnapshotFingerprint ?? "") ||
+      Object.keys(harnessInventories).length === 0 ||
+      Object.entries(harnessInventories).some(([harness, item]) =>
+        !["codex", "claude"].includes(harness) ||
+        item?.hostCaptureStatus !== "verified" ||
+        !/^[a-f0-9]{64}$/u.test(item?.hostSnapshotFingerprint ?? "")
+      ) ||
       !Array.isArray(inventory.admittedSkills) ||
       !inventory.pluginPath
     ) throw new Error("invalid inventory");
-    return inventory;
+    return { ...inventory, harnessInventories };
   } catch {
     throw new UninstallHold(
       "UNINSTALL_OWNERSHIP_UNKNOWN",
@@ -314,41 +325,61 @@ async function inventoryFor(project) {
 export async function createUninstallPlan({ environment = process.env, project }) {
   const absoluteProject = path.resolve(project);
   const inventory = await inventoryFor(absoluteProject);
-  const harness = inventory.harness;
   const language = inventory.language ?? "en";
   const copy = localizedItems(language);
-  const current = hostState(harness, environment);
-  const before = inventory.hostBeforeInstall ?? { marketplace: null, plugin: null };
-  const pluginChanged = !sameRegistration(current.plugin, before.plugin);
-  const marketplaceChanged = !sameRegistration(current.marketplace, before.marketplace);
+  const harnessPlans = Object.entries(inventory.harnessInventories).map(([harness, item]) => {
+    const current = hostState(harness, environment);
+    const before = item.hostBeforeInstall ?? { marketplace: null, plugin: null };
+    const pluginChanged = !sameRegistration(current.plugin, before.plugin);
+    const marketplaceChanged = !sameRegistration(current.marketplace, before.marketplace);
+    return {
+      before,
+      current,
+      harness,
+      operations: [
+        ...(current.plugin && pluginChanged ? ["remove-plugin"] : []),
+        ...(current.marketplace && marketplaceChanged ? ["remove-marketplace"] : []),
+        ...(before.marketplace && marketplaceChanged ? ["restore-marketplace"] : []),
+        ...(before.plugin && pluginChanged ? ["restore-plugin"] : []),
+      ],
+      pluginChanged,
+      marketplaceChanged,
+    };
+  });
+  const single = harnessPlans.length === 1 ? harnessPlans[0] : null;
   const identity = {
-    before,
-    current,
-    harness,
+    harnessPlans,
     inventoryHash: fingerprint(inventory),
     project: absoluteProject,
   };
-  const status = pluginChanged || marketplaceChanged ? "preview" : "already-uninstalled";
+  const status = harnessPlans.some((item) => item.pluginChanged || item.marketplaceChanged)
+    ? "preview"
+    : "already-uninstalled";
   return {
-    before,
-    current,
+    before: single?.before ?? Object.fromEntries(harnessPlans.map((item) => [item.harness, item.before])),
+    current: single?.current ?? Object.fromEntries(harnessPlans.map((item) => [item.harness, item.current])),
     fingerprint: fingerprint(identity),
-    harness,
+    harness: single?.harness ?? "multiple",
+    harnessPlans,
     language,
-    operations: [
-      ...(current.plugin && pluginChanged ? ["remove-plugin"] : []),
-      ...(current.marketplace && marketplaceChanged ? ["remove-marketplace"] : []),
-      ...(before.marketplace && marketplaceChanged ? ["restore-marketplace"] : []),
-      ...(before.plugin && pluginChanged ? ["restore-plugin"] : []),
-    ],
+    operations: single?.operations ?? harnessPlans.flatMap((item) =>
+      item.operations.map((operation) => ({ harness: item.harness, operation }))
+    ),
     preserve: copy.preserve,
-    remove: [
-      ...(current.plugin && pluginChanged ? [copy.plugin] : []),
-      ...(current.marketplace && marketplaceChanged ? [copy.marketplace] : []),
-    ],
-    restore: before.plugin || before.marketplace
-      ? [copy.restorePrior]
-      : [copy.restoreAbsent],
+    remove: single
+      ? [
+          ...(single.current.plugin && single.pluginChanged ? [copy.plugin] : []),
+          ...(single.current.marketplace && single.marketplaceChanged ? [copy.marketplace] : []),
+        ]
+      : harnessPlans.flatMap((item) => [
+          ...(item.current.plugin && item.pluginChanged ? [`${item.harness}: ${copy.plugin}`] : []),
+          ...(item.current.marketplace && item.marketplaceChanged ? [`${item.harness}: ${copy.marketplace}`] : []),
+        ]),
+    restore: single
+      ? [single.before.plugin || single.before.marketplace ? copy.restorePrior : copy.restoreAbsent]
+      : harnessPlans.map((item) =>
+          `${item.harness}: ${item.before.plugin || item.before.marketplace ? copy.restorePrior : copy.restoreAbsent}`
+        ),
     status,
     unresolved: [],
   };
@@ -378,19 +409,23 @@ export async function executeUninstall({
     );
   }
 
-  const original = plan.current;
+  const originals = Object.fromEntries(plan.harnessPlans.map((item) => [item.harness, item.current]));
   const receiptPath = path.join(path.resolve(project), ".oio-local/uninstall-receipt.json");
   const temporaryReceipt = `${receiptPath}.tmp-${process.pid}`;
   try {
-    if (plan.operations.includes("remove-plugin")) {
-      runHost(plan.harness, "remove-plugin", environment);
-    }
-    if (plan.operations.includes("remove-marketplace")) runHost(plan.harness, "remove-marketplace", environment);
-    if (plan.operations.includes("restore-marketplace")) {
-      runHost(plan.harness, "restore-marketplace", environment, plan.before.marketplace);
-    }
-    if (plan.operations.includes("restore-plugin")) {
-      runHost(plan.harness, "restore-plugin", environment, plan.before.plugin);
+    for (const harnessPlan of plan.harnessPlans) {
+      if (harnessPlan.operations.includes("remove-plugin")) {
+        runHost(harnessPlan.harness, "remove-plugin", environment);
+      }
+      if (harnessPlan.operations.includes("remove-marketplace")) {
+        runHost(harnessPlan.harness, "remove-marketplace", environment);
+      }
+      if (harnessPlan.operations.includes("restore-marketplace")) {
+        runHost(harnessPlan.harness, "restore-marketplace", environment, harnessPlan.before.marketplace);
+      }
+      if (harnessPlan.operations.includes("restore-plugin")) {
+        runHost(harnessPlan.harness, "restore-plugin", environment, harnessPlan.before.plugin);
+      }
     }
     const readback = await createUninstallPlan({ environment, project });
     if (readback.status !== "already-uninstalled") {
@@ -404,6 +439,7 @@ export async function executeUninstall({
       completedAt: new Date().toISOString(),
       fingerprint: plan.fingerprint,
       harness: plan.harness,
+      harnesses: plan.harnessPlans.map((item) => item.harness),
       health: "pre-install-state-restored",
       human,
       preserved: plan.preserve,
@@ -421,22 +457,25 @@ export async function executeUninstall({
   } catch (error) {
     await rm(temporaryReceipt, { force: true });
     const rollbackErrors = [];
-    let rollbackState;
-    try { rollbackState = hostState(plan.harness, environment); } catch (rollbackError) {
-      rollbackErrors.push(rollbackError);
-      rollbackState = { marketplace: null, plugin: null };
-    }
-    if (rollbackState.plugin && !sameRegistration(rollbackState.plugin, original.plugin)) {
-      try { runHost(plan.harness, "remove-plugin", environment); } catch (rollbackError) { rollbackErrors.push(rollbackError); }
-    }
-    if (rollbackState.marketplace && !sameRegistration(rollbackState.marketplace, original.marketplace)) {
-      try { runHost(plan.harness, "remove-marketplace", environment); } catch (rollbackError) { rollbackErrors.push(rollbackError); }
-    }
-    if (original.marketplace && !sameRegistration(rollbackState.marketplace, original.marketplace)) {
-      try { runHost(plan.harness, "restore-marketplace", environment, original.marketplace); } catch (rollbackError) { rollbackErrors.push(rollbackError); }
-    }
-    if (original.plugin && !sameRegistration(rollbackState.plugin, original.plugin)) {
-      try { runHost(plan.harness, "restore-plugin", environment, original.plugin); } catch (rollbackError) { rollbackErrors.push(rollbackError); }
+    for (const harnessPlan of plan.harnessPlans) {
+      const original = originals[harnessPlan.harness];
+      let rollbackState;
+      try { rollbackState = hostState(harnessPlan.harness, environment); } catch (rollbackError) {
+        rollbackErrors.push(rollbackError);
+        rollbackState = { marketplace: null, plugin: null };
+      }
+      if (rollbackState.plugin && !sameRegistration(rollbackState.plugin, original.plugin)) {
+        try { runHost(harnessPlan.harness, "remove-plugin", environment); } catch (rollbackError) { rollbackErrors.push(rollbackError); }
+      }
+      if (rollbackState.marketplace && !sameRegistration(rollbackState.marketplace, original.marketplace)) {
+        try { runHost(harnessPlan.harness, "remove-marketplace", environment); } catch (rollbackError) { rollbackErrors.push(rollbackError); }
+      }
+      if (original.marketplace && !sameRegistration(rollbackState.marketplace, original.marketplace)) {
+        try { runHost(harnessPlan.harness, "restore-marketplace", environment, original.marketplace); } catch (rollbackError) { rollbackErrors.push(rollbackError); }
+      }
+      if (original.plugin && !sameRegistration(rollbackState.plugin, original.plugin)) {
+        try { runHost(harnessPlan.harness, "restore-plugin", environment, original.plugin); } catch (rollbackError) { rollbackErrors.push(rollbackError); }
+      }
     }
     if (rollbackErrors.length) {
       throw new UninstallHold(

@@ -9,6 +9,7 @@ import {
   completeExecution,
   createRequestRecord,
   createSuccessorRequestRecord,
+  deleteUnstartedRequestRecord,
   loadCurrentArtifact,
   loadExecutionPacket,
   loadHumanLanguage,
@@ -74,21 +75,27 @@ async function createJourney({ predecessorRequestId, project, requestPath }) {
     await rm(root, { force: true, recursive: true });
     throw error;
   }
-  const request = loadRequest(project, requestId);
-  const review = await buildOutcomeReview({ request, requestRoot: root });
-  recordArtifact({
-    project,
-    requestId,
-    review,
-    toState: RequestState.OUTCOME_REVIEW,
-    type: "OUTCOME",
-  });
-  return {
-    artifactFingerprint: review.artifactFingerprint,
-    review: review.path,
-    requestId,
-    state: RequestState.OUTCOME_REVIEW,
-  };
+  try {
+    const request = loadRequest(project, requestId);
+    const review = await buildOutcomeReview({ request, requestRoot: root });
+    recordArtifact({
+      project,
+      requestId,
+      review,
+      toState: RequestState.OUTCOME_REVIEW,
+      type: "OUTCOME",
+    });
+    return {
+      artifactFingerprint: review.artifactFingerprint,
+      review: review.path,
+      requestId,
+      state: RequestState.OUTCOME_REVIEW,
+    };
+  } catch (error) {
+    deleteUnstartedRequestRecord(project, requestId);
+    await rm(root, { force: true, recursive: true });
+    throw error;
+  }
 }
 
 export async function startJourney({ project, requestPath }) {

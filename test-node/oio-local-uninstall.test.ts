@@ -187,6 +187,68 @@ afterEach(async () => {
 });
 
 describe("OIO Local safe uninstall", () => {
+  it("restores every verified harness activated for one project", async () => {
+    const project = await projectFixture("codex");
+    const inventoryPath = path.join(project, ".oio-local/pre-install-inventory.json");
+    const inventory = JSON.parse(await readFile(inventoryPath, "utf8"));
+    inventory.harness = "claude";
+    inventory.harnessInventories = {
+      codex: {
+        hostBeforeInstall: { marketplace: null, plugin: null },
+        hostCaptureStatus: "verified",
+        hostSnapshotFingerprint: "a".repeat(64),
+      },
+      claude: {
+        hostBeforeInstall: { marketplace: null, plugin: null },
+        hostCaptureStatus: "verified",
+        hostSnapshotFingerprint: "b".repeat(64),
+      },
+    };
+    await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`, "utf8");
+    const codex = await fakeHost();
+    const claude = await fakeHost();
+    const environment = {
+      ...process.env,
+      HOST_STATE: codex.state,
+      OIO_LOCAL_CODEX_BINARY: codex.binary,
+      OIO_LOCAL_CLAUDE_BINARY: claude.binary,
+    };
+    // Each fake binary reads HOST_STATE. Give the Claude binary its own fixed state.
+    const claudeWrapper = path.join(path.dirname(claude.binary), "claude-wrapper.sh");
+    await writeFile(claudeWrapper, `#!/bin/sh\nHOST_STATE=${JSON.stringify(claude.state)} exec ${JSON.stringify(claude.binary)} "$@"\n`, "utf8");
+    await chmod(claudeWrapper, 0o755);
+    environment.OIO_LOCAL_CLAUDE_BINARY = claudeWrapper;
+
+    const preview = await createUninstallPlan({ environment, project });
+    expect(preview).toMatchObject({
+      harness: "multiple",
+      harnessPlans: expect.arrayContaining([
+        expect.objectContaining({ harness: "codex" }),
+        expect.objectContaining({ harness: "claude" }),
+      ]),
+      status: "preview",
+    });
+    const completed = await executeUninstall({
+      environment,
+      expectedFingerprint: preview.fingerprint,
+      human: "Alejandro",
+      project,
+    });
+    expect(completed).toMatchObject({
+      harness: "multiple",
+      harnesses: expect.arrayContaining(["codex", "claude"]),
+      status: "uninstalled",
+    });
+    expect(JSON.parse(await readFile(codex.state, "utf8"))).toMatchObject({
+      installed: false,
+      marketplace: false,
+    });
+    expect(JSON.parse(await readFile(claude.state, "utf8"))).toMatchObject({
+      installed: false,
+      marketplace: false,
+    });
+  });
+
   it.each(["codex", "claude"] as const)(
     "returns Spanish preview and failure guidance on %s",
     async (harness) => {

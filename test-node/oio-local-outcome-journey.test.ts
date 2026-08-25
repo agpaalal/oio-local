@@ -1,12 +1,15 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, chmod, cp, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { access, chmod, cp, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 
 import { afterEach, describe, expect, it } from "vitest";
+
+import { acceptJourney } from "../plugins/oio-local/lib/journey.mjs";
+import { validateAgentResult } from "../plugins/oio-local/lib/support-assistant.mjs";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const setupScript = path.join(repositoryRoot, "plugins/oio-local/scripts/codex/setup.mjs");
@@ -70,6 +73,29 @@ afterEach(async () => {
 });
 
 describe("OIO Local Codex English outcome journey", () => {
+  it.each([
+    "We issued a refund for your order.",
+    "I've refunded your order.",
+    "Your payment is complete.",
+    "El reembolso fue emitido.",
+  ])("rejects a completed external-action claim: %s", (reply) => {
+    const packet = {
+      modelProfile: "luna-max",
+      packetFingerprint: "a".repeat(64),
+      requestId: "REQ-fixture",
+    };
+    expect(() => validateAgentResult({
+      agent: { modelProfile: "luna-max", role: "support-request-interpreter" },
+      category: "billing",
+      packetFingerprint: packet.packetFingerprint,
+      priority: "high",
+      reply,
+      requestId: packet.requestId,
+      taskId: "S1",
+      tasks: ["Verify the payment records."],
+    }, packet)).toThrow("external refund or payment action");
+  });
+
   it("binds the Human-facing controller to the approved outcome route", async () => {
     const controller = await readFile(
       path.join(repositoryRoot, "plugins/oio-local/skills/oio-local/SKILL.md"),
@@ -136,6 +162,17 @@ describe("OIO Local Codex English outcome journey", () => {
       path.dirname(started.output.review),
       "reviews/all-decisions.html",
     ))).resolves.toBeUndefined();
+
+    const blankApproval = await runJson(journeyScript, [
+      "approve-outcome", "--project", project,
+      "--request-id", started.output.requestId,
+      "--fingerprint", started.output.artifactFingerprint,
+      "--human", "   ",
+    ], environment);
+    expect(blankApproval).toMatchObject({
+      exitCode: 2,
+      output: { code: "HUMAN_IDENTITY_REQUIRED", state: "HELD" },
+    });
 
     const outcomeApproved = await runJson(journeyScript, [
       "approve-outcome", "--project", project,
@@ -263,6 +300,39 @@ describe("OIO Local Codex English outcome journey", () => {
     expect(deliverable).toContain("Duplicate charge");
     expect(deliverable).toContain("Hi Jamie");
     expect(deliverable).toContain("Verify the two payment transactions");
+
+    const blankAcceptance = await runJson(journeyScript, [
+      "accept", "--project", project,
+      "--request-id", started.output.requestId,
+      "--result-hash", executed.output.deliverable.sha256,
+      "--human", "   ",
+    ], environment);
+    expect(blankAcceptance).toMatchObject({
+      exitCode: 2,
+      output: { code: "HUMAN_IDENTITY_REQUIRED", state: "HELD" },
+    });
+
+    const closurePath = path.join(
+      project,
+      ".oio-local/requests",
+      started.output.requestId,
+      "records/closure.md",
+    );
+    await mkdir(closurePath);
+    await expect(acceptJourney({
+      human: "fixture-human",
+      project,
+      requestId: started.output.requestId,
+      resultHash: executed.output.deliverable.sha256,
+    })).rejects.toThrow();
+    await rm(closurePath, { recursive: true });
+    const recoveredClosure = await acceptJourney({
+      human: "fixture-human",
+      project,
+      requestId: started.output.requestId,
+      resultHash: executed.output.deliverable.sha256,
+    });
+    expect(recoveredClosure).toMatchObject({ state: "CLOSED" });
 
     const closed = await runJson(journeyScript, [
       "accept", "--project", project,
@@ -553,6 +623,13 @@ describe("OIO Local Codex English outcome journey", () => {
       "--version", "V0",
     ], environment);
     expect(corrected.output).toMatchObject({ state: "PROOF_REVIEW" });
+    const correctedAcceptance = await runJson(journeyScript, [
+      "accept", "--project", project,
+      "--request-id", started.output.requestId,
+      "--result-hash", corrected.output.deliverable.sha256,
+      "--human", "fixture-human",
+    ], environment);
+    expect(correctedAcceptance.output).toMatchObject({ state: "CLOSED" });
 
     const successorRequestPath = path.join(project, "successor-request.json");
     await writeFile(successorRequestPath, JSON.stringify({
@@ -869,7 +946,9 @@ describe("OIO Local Codex English outcome journey", () => {
         }),
         executionPackets: [expect.objectContaining({ model_profile: "terra-max" })],
         steps: expect.arrayContaining([expect.objectContaining({ id: "S1" })]),
-        tickets: [expect.objectContaining({ id: "BUILD-SUPPORT-ASSISTANT-V0" })],
+        tickets: [expect.objectContaining({
+          id: `${started.output.requestId}:BUILD-SUPPORT-ASSISTANT-V0`,
+        })],
       });
     } finally {
       database.close();
@@ -891,6 +970,13 @@ describe("OIO Local Codex English outcome journey", () => {
     expect((await runJson(setupScript, [
       "--project", project, "--language", "en", "--harness", "codex",
     ], environment)).exitCode).toBe(0);
+    const failedReview = await runJson(journeyScript, [
+      "start", "--project", project, "--request", requestPath,
+    ], { ...environment, PATH: doppler });
+    expect(failedReview).toMatchObject({
+      exitCode: 2,
+      output: { code: "REVIEW_ARTIFACT_FAILED", state: "HELD" },
+    });
     const missingPredecessor = await runJson(journeyScript, [
       "start-successor", "--project", project, "--request", requestPath,
     ], environment);
@@ -906,12 +992,24 @@ describe("OIO Local Codex English outcome journey", () => {
       exitCode: 2,
       output: { code: "REQUEST_NOT_FOUND", state: "HELD" },
     });
+    const activePredecessor = await runJson(journeyScript, [
+      "start", "--project", project, "--request", requestPath,
+    ], environment);
+    const activeSuccessor = await runJson(journeyScript, [
+      "start-successor", "--project", project,
+      "--predecessor-request-id", activePredecessor.output.requestId,
+      "--request", requestPath,
+    ], environment);
+    expect(activeSuccessor).toMatchObject({
+      exitCode: 2,
+      output: { code: "INVALID_REQUEST_STATE", state: "HELD" },
+    });
     const database = new DatabaseSync(path.join(project, ".oio-local/state.sqlite3"), {
       readOnly: true,
     });
     try {
       expect(database.prepare("SELECT COUNT(*) AS count FROM requests").get()).toMatchObject({
-        count: 0,
+        count: 1,
       });
       expect(database.prepare("SELECT COUNT(*) AS count FROM request_links").get()).toMatchObject({
         count: 0,

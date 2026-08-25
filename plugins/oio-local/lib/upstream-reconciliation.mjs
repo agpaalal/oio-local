@@ -297,6 +297,7 @@ async function loadDecision({ approvalFingerprint: expected, candidateDirectory 
 
 async function decisionReceipt({ approvalFingerprint: fingerprint_, candidateDirectory, decision, human, receiptId }) {
   if (!human || !receiptId || !fingerprint_) throw new Error("Human identity, receipt id, and approval fingerprint are required");
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(receiptId)) throw new Error("Receipt id must be one safe filename component");
   const { candidate, qualification } = await loadDecision({ approvalFingerprint: fingerprint_, candidateDirectory });
   const receipt = { approvalFingerprint: fingerprint_, candidateId: candidate.id, decidedAt: new Date().toISOString(), decision, human, qualificationHash: qualification.evidenceHash, receiptId, sourceIdentity: candidate.sourceIdentity };
   await writeJsonAtomic(path.join(candidateDirectory, "receipts", `${receiptId}.json`), receipt);
@@ -352,6 +353,7 @@ async function recoverInterruptedAcceptance(receiptPath, requestedActive) {
 
 export async function acceptUpstreamCandidate({ activePluginRoot, approvalFingerprint: fingerprint_, candidateDirectory, failAfterApply = false, failReceiptWrite = false, human, receiptId }) {
   if (!human || !receiptId || !fingerprint_) throw new Error("Human identity, receipt id, and approval fingerprint are required");
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(receiptId)) throw new Error("Receipt id must be one safe filename component");
   const { bundleRoot, candidate, qualification } = await loadDecision({ approvalFingerprint: fingerprint_, candidateDirectory });
   const requestedActive = path.resolve(activePluginRoot);
   const receiptPath = path.join(candidateDirectory, "receipts", `${receiptId}.json`);
@@ -370,8 +372,11 @@ export async function acceptUpstreamCandidate({ activePluginRoot, approvalFinger
   };
   await writeJsonAtomic(receiptPath, intent);
   await cp(bundleRoot, staging, { recursive: true, verbatimSymlinks: true });
+  let activeMoved = false;
   try {
-    await rename(active, backup); await rename(staging, active);
+    await rename(active, backup);
+    activeMoved = true;
+    await rename(staging, active);
     if (failAfterApply) throw new Error("candidate health verification failed");
     await verifyCandidateBundle(active);
     if ((await treeHash(active)) !== candidate.bundleHash) throw new Error("candidate health verification failed");
@@ -382,8 +387,10 @@ export async function acceptUpstreamCandidate({ activePluginRoot, approvalFinger
     return receipt;
   } catch (error) {
     await rm(staging, { force: true, recursive: true });
-    if (await exists(active)) await rm(active, { force: true, recursive: true });
-    if (await exists(backup)) await rename(backup, active);
+    if (activeMoved) {
+      if (await exists(active)) await rm(active, { force: true, recursive: true });
+      if (await exists(backup)) await rename(backup, active);
+    }
     await writeJsonAtomic(receiptPath, { ...intent, decision: "rolled-back", failedAt: new Date().toISOString() }).catch(() => {});
     throw error;
   }

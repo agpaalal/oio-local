@@ -229,7 +229,10 @@ export function withState(project, callback) {
     return callback(database);
   } catch (error) {
     if (error instanceof JourneyHold) throw error;
-    if (String(error?.message ?? error).includes("no such table: installation")) {
+    if (
+      String(error?.message ?? error).includes("no such table: installation") ||
+      String(error?.message ?? error).includes("unable to open database file")
+    ) {
       throw new JourneyHold(
         "SETUP_REQUIRED",
         "OIO Local setup is not complete for this project.",
