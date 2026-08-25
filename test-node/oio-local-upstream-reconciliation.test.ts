@@ -159,6 +159,7 @@ describe("OIO Local upstream skill reconciliation", () => {
     })).rejects.toThrow("must be isolated");
 
     await symlink("/tmp", path.join(upstream.root, "skills/productivity/grilling/external"));
+    await commitChange(upstream);
     await expect(createUpstreamCandidate({ activePluginRoot: activePlugin, candidateRoot: candidates, upstreamRoot: upstream.root }))
       .rejects.toThrow("unsupported entry");
   });
@@ -218,6 +219,21 @@ describe("OIO Local upstream skill reconciliation", () => {
       activePluginRoot: activePlugin, approvalFingerprint: qualified.approvalFingerprint,
       candidateDirectory: candidate.directory, human: "Alejandro", receiptId: "MUTATED",
     })).rejects.toThrow("identity changed");
+  });
+
+  it("rejects dirty upstream bytes that are not represented by HEAD", async () => {
+    const activePlugin = await copyPlugin();
+    const upstream = await materializeUpstream(activePlugin);
+    await writeFile(
+      path.join(upstream.root, "skills/productivity/grilling/LOCAL-ONLY.md"),
+      "uncommitted guidance\n",
+      "utf8",
+    );
+    await expect(createUpstreamCandidate({
+      activePluginRoot: activePlugin,
+      candidateRoot: await temporaryDirectory("oio-local-candidates-"),
+      upstreamRoot: upstream.root,
+    })).rejects.toThrow("checkout must be clean");
   });
 
   it("recovers a durable interrupted-swap intent before retrying acceptance", async () => {

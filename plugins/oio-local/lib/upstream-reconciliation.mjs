@@ -73,6 +73,8 @@ async function provenance(upstreamRoot, expectedSourceIdentity) {
   if (!MATT_ORIGINS.has(origin)) throw new Error(`unexpected upstream origin: ${origin}`);
   const head = runGit(canonicalRoot, ["rev-parse", "HEAD"]);
   if (!/^[a-f0-9]{40}$/u.test(head)) throw new Error("upstream HEAD is not a full Git commit");
+  const dirty = runGit(canonicalRoot, ["status", "--porcelain", "--untracked-files=all"]);
+  if (dirty) throw new Error("upstream checkout must be clean before assigning commit provenance");
   const sourceIdentity = `git:${head}`;
   if (expectedSourceIdentity && expectedSourceIdentity !== sourceIdentity) {
     throw new Error("expected upstream identity does not match checkout HEAD");

@@ -19,6 +19,7 @@ import {
   loadHumanLanguage,
   persistJourneyHold,
 } from "./journey-repository.mjs";
+import { JourneyHold } from "./local-state.mjs";
 
 function parse(commandLine) {
   const [command, ...pairs] = commandLine;
@@ -27,7 +28,11 @@ function parse(commandLine) {
     const key = pairs[index];
     const value = pairs[index + 1];
     if (!key?.startsWith("--") || value === undefined) {
-      throw new Error("Journey arguments must use a command followed by --name value pairs.");
+      throw new JourneyHold(
+        "INVALID_JOURNEY_ARGUMENTS",
+        "Journey arguments must use a command followed by --name value pairs.",
+        "Provide every option as --name value and retry the same command.",
+      );
     }
     values[key.slice(2)] = value;
   }
@@ -35,8 +40,10 @@ function parse(commandLine) {
 }
 
 export async function runJourneyCli(harness, commandLine) {
-  const { command, values } = parse(commandLine);
+  let command;
+  let values = {};
   try {
+    ({ command, values } = parse(commandLine));
     assertActiveHarness(values.project, harness);
     let result;
     if (command === "start") {

@@ -156,6 +156,19 @@ describe("OIO Local Codex installation seam", () => {
     });
   });
 
+  it("returns a structured hold for malformed journey arguments", async () => {
+    const projectDirectory = await temporaryDirectory("oio-local-bad-arguments-");
+    const result = await runJson(
+      path.join(repositoryRoot, "plugins/oio-local/scripts/codex/journey.mjs"),
+      ["start", "--project"],
+      process.env,
+    );
+    expect(result).toMatchObject({
+      exitCode: 2,
+      output: { code: "INVALID_JOURNEY_ARGUMENTS", state: "HELD" },
+    });
+  });
+
   it("is discoverable through a clean Codex plugin host", async () => {
     const verification = await runJson(
       hostVerificationScript,

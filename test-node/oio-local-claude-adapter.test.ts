@@ -389,6 +389,16 @@ describe("OIO Local Claude Code adapter", () => {
     expect((await runJson(process.execPath, [
       codexSetupScript, "--project", project, "--language", "en", "--harness", "codex",
     ], environment)).exitCode).toBe(0);
+    const holdDatabase = new DatabaseSync(path.join(project, ".oio-local/state.sqlite3"));
+    try {
+      holdDatabase.prepare(`
+        INSERT INTO holds (
+          id, request_id, code, message, recovery_action, details_json, occurred_at, resolved_at
+        ) VALUES (?, ?, 'INVALID_AGENT_RESULT', 'Invalid child result', 'Retry S1', '{}', ?, NULL)
+      `).run("HOLD-transfer-fixture", started.output.requestId, new Date().toISOString());
+    } finally {
+      holdDatabase.close();
+    }
     const prepared = await runJson(process.execPath, [
       codexJourneyScript, "hold-harness-transfer",
       "--project", project,
