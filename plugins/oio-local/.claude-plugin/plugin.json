@@ -1,0 +1,8 @@
+{
+  "name": "oio-local",
+  "version": "0.1.0",
+  "description": "Outcome-first local implementation guidance for nondevelopers",
+  "author": {
+    "name": "OIO Co"
+  }
+}

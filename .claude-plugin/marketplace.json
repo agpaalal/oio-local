@@ -1,0 +1,19 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "oio-local",
+  "description": "OIO Local plugins for outcome-first local implementation",
+  "owner": {
+    "name": "OIO Co"
+  },
+  "plugins": [
+    {
+      "name": "oio-local",
+      "description": "Guide a nondeveloper from a substantial request to a proved local outcome.",
+      "author": {
+        "name": "OIO Co"
+      },
+      "category": "productivity",
+      "source": "./plugins/oio-local"
+    }
+  ]
+}

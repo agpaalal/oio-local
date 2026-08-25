@@ -1,0 +1,50 @@
+{
+  "package": {
+    "project_name": "OIO",
+    "project_palette": "blue",
+    "title": "Support Assistant Outcome Definition",
+    "revision": "0.1",
+    "date": "2026-08-24",
+    "kicker": "OIO Outcome Engineering · Outcome Review",
+    "subtitle": "Exact Human review before Orchestrator qualification",
+    "status": "Provisional",
+    "definition_fingerprint": "example-definition-fingerprint"
+  },
+  "integrity_details": [
+    {
+      "label": "Exact source",
+      "value": "Revision 0.1; the prior draft is superseded."
+    }
+  ],
+  "documents": [
+    {
+      "id": "D00",
+      "number": "00",
+      "title": "Outcome Definition",
+      "summary": "Outcome, proof, limits, authority, and Workflow 0.",
+      "review_question": "Is this the exact Outcome to pursue?",
+      "kicker": "OIO Outcome Engineering · Outcome Review",
+      "subtitle": "Human-readable synthesis",
+      "body_file": "example-body.html",
+      "decisions": [
+        {
+          "id": "OUT-01",
+          "status": "agreed",
+          "title": "Desired outcome",
+          "statement": "Produce one useful support response from a real incoming request.",
+          "boundary": "This does not authorize recurring operation.",
+          "basis": "Confirmed by Alejandro."
+        },
+        {
+          "id": "OUT-02",
+          "status": "pending",
+          "title": "Proof",
+          "statement": "Alejandro accepts the response as useful and grounded.",
+          "boundary": "Implementation evidence alone is insufficient."
+        }
+      ]
+    }
+  ],
+  "copy_files": [],
+  "downloads": []
+}

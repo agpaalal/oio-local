@@ -1,0 +1,18 @@
+{
+  "name": "oio-local",
+  "version": "0.1.0",
+  "description": "Outcome-first local implementation guidance for nondevelopers",
+  "author": {
+    "name": "OIO Co"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "OIO Local",
+    "shortDescription": "Turn a substantial request into a proved local outcome.",
+    "longDescription": "OIO Local guides a nondeveloper from an ordinary-language request through exact outcome approval, bounded implementation, proof, limitations, and a clear stopping point.",
+    "developerName": "OIO Co",
+    "category": "Productivity",
+    "capabilities": [],
+    "defaultPrompt": "Use OIO Local to guide this implementation from outcome definition to a proved V0."
+  }
+}

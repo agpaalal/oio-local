@@ -1,0 +1,20 @@
+{
+  "name": "oio-local",
+  "interface": {
+    "displayName": "OIO Local"
+  },
+  "plugins": [
+    {
+      "name": "oio-local",
+      "source": {
+        "source": "local",
+        "path": "./plugins/oio-local"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
