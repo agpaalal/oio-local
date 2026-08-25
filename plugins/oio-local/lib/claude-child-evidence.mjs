@@ -38,18 +38,20 @@ function textValues(value) {
 }
 
 function parseSingleJsonResult(completion, packet) {
-  const matches = [];
+  const matches = new Map();
   for (const text of textValues(completion.content)) {
-    try {
-      const parsed = JSON.parse(text.trim());
-      validateAgentResult(parsed, packet);
-      matches.push(parsed);
-    } catch {}
+    for (const candidate of jsonFragments(text)) {
+      try {
+        const parsed = JSON.parse(candidate.trim());
+        validateAgentResult(parsed, packet);
+        matches.set(digest(parsed), parsed);
+      } catch {}
+    }
   }
-  if (matches.length !== 1) {
+  if (matches.size !== 1) {
     throw new Error("Claude child completion did not contain one valid S1 JSON result.");
   }
-  return matches[0];
+  return [...matches.values()][0];
 }
 
 function jsonFragments(text) {

@@ -24,6 +24,7 @@ const result = {
 };
 
 async function fixture(overrides: {
+  childCompletion?: string;
   dispatchPacket?: any;
   executedPath?: string;
   executionResult?: "failed" | "missing" | "wrapped" | "wrong-state";
@@ -38,6 +39,7 @@ async function fixture(overrides: {
   const dispatchedPacket = overrides.dispatchPacket ?? packet;
   const writtenResult = overrides.writtenResult ?? result;
   const executionPath = overrides.executedPath ?? agentResultPath;
+  const childCompletion = overrides.childCompletion ?? JSON.stringify(result);
   const events = [{
     message: { content: [{
       id: "tool-agent",
@@ -51,7 +53,7 @@ async function fixture(overrides: {
     }] },
   }, {
     message: { content: [{
-      content: [{ type: "text", text: JSON.stringify(result) }, { type: "text", text: "metadata" }],
+      content: [{ type: "text", text: childCompletion }, { type: "text", text: "metadata" }],
       tool_use_id: "tool-agent",
       type: "tool_result",
     }] },
@@ -107,6 +109,12 @@ describe("Claude native child evidence", () => {
     });
     expect(evidence.childResultSha256).toBe(evidence.writtenResultSha256);
     expect(evidence.childResultSha256).toBe(evidence.executedResultSha256);
+  });
+
+  it("accepts one valid child result wrapped in provider status text", async () => {
+    await expect(proveClaudeChildExecution(await fixture({
+      childCompletion: `Completed the bounded task.\n\`\`\`json\n${JSON.stringify(result)}\n\`\`\``,
+    }))).resolves.toMatchObject({ verified: true });
   });
 
   it("rejects a dispatch carrying a different packet", async () => {
