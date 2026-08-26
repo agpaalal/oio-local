@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 1,
+  "bundleId": "oio-local-v0-matt-v1.2.3",
+  "hashAlgorithm": "sha256-tree-v1",
+  "skills": [
+    {
+      "name": "grilling",
+      "source": "https://github.com/mattpocock/skills",
+      "sourcePath": "skills/productivity/grilling",
+      "sourceIdentity": "git:6acc160e4e0cd062dbbbd7a1b26ae92855edf07e",
+      "contentHash": "f82bb664166568b1d7e0323ea13b45b5df4a096bb6b25de7a946e0e58de0529d",
+      "licenseNotice": "THIRD_PARTY_NOTICES/mattpocock-skills-MIT.txt"
+    },
+    {
+      "name": "domain-modeling",
+      "source": "https://github.com/mattpocock/skills",
+      "sourcePath": "skills/engineering/domain-modeling",
+      "sourceIdentity": "git:6acc160e4e0cd062dbbbd7a1b26ae92855edf07e",
+      "contentHash": "40afc20cd49261811d7fe377fff53c1804f5e27644b42adb65469c7fc305a3a2",
+      "licenseNotice": "THIRD_PARTY_NOTICES/mattpocock-skills-MIT.txt"
+    },
+    {
+      "name": "codebase-design",
+      "source": "https://github.com/mattpocock/skills",
+      "sourcePath": "skills/engineering/codebase-design",
+      "sourceIdentity": "git:6acc160e4e0cd062dbbbd7a1b26ae92855edf07e",
+      "contentHash": "d2c52f5938ce4f570f16bd8b1c194b07524b57da046a86be1617b390f14f6409",
+      "licenseNotice": "THIRD_PARTY_NOTICES/mattpocock-skills-MIT.txt"
+    },
+    {
+      "name": "wayfinder",
+      "source": "https://github.com/mattpocock/skills",
+      "sourcePath": "skills/engineering/wayfinder",
+      "sourceIdentity": "git:6acc160e4e0cd062dbbbd7a1b26ae92855edf07e",
+      "contentHash": "5c6ff724e3051bd9d1191a088079b2e85afffbdd8dfc9604118e85fa1c3c0944",
+      "sourceContentHash": "462158ee37389454d44fd1b5e3d8ae5f75650fd621ae843a1d22a53082814b44",
+      "licenseNotice": "THIRD_PARTY_NOTICES/mattpocock-skills-MIT.txt",
+      "modifications": ["Set disable-model-invocation to false for Codex plugin compatibility."]
+    },
+    {
+      "name": "grill-with-docs",
+      "source": "https://github.com/mattpocock/skills",
+      "sourcePath": "skills/engineering/grill-with-docs",
+      "sourceIdentity": "git:6acc160e4e0cd062dbbbd7a1b26ae92855edf07e",
+      "contentHash": "76cb236eb9213afff0309a994dde8325b818c0664937430e67eeb1ab359f3758",
+      "sourceContentHash": "84554e18aac963e26214159bfb522ddbd72dab710f43176727ca14f432033567",
+      "licenseNotice": "THIRD_PARTY_NOTICES/mattpocock-skills-MIT.txt",
+      "modifications": ["Set disable-model-invocation to false for Codex plugin compatibility."]
+    },
+    {
+      "name": "oio-review-artifact",
+      "source": "https://github.com/agpaalal/oio-local",
+      "sourcePath": "skills/oio-review-artifact",
+      "sourceIdentity": "sha256:69d5360622aa7eaebc5028f7c466e62155031ffb5af39a0a4bc2b43cc81708d4",
+      "contentHash": "69d5360622aa7eaebc5028f7c466e62155031ffb5af39a0a4bc2b43cc81708d4",
+      "licenseNotice": null
+    },
+    {
+      "name": "to-spec",
+      "source": "https://github.com/mattpocock/skills",
+      "sourcePath": "skills/engineering/to-spec",
+      "sourceIdentity": "git:6acc160e4e0cd062dbbbd7a1b26ae92855edf07e",
+      "contentHash": "a3dd4b94b5007df332ea744513748070cb24925ecac65692a88623013ebf8060",
+      "sourceContentHash": "14211cd48167ee7fd243fbb5a6ca380ec5641253298a3fbe779888ff93867f65",
+      "licenseNotice": "THIRD_PARTY_NOTICES/mattpocock-skills-MIT.txt",
+      "modifications": ["Set disable-model-invocation to false for Codex plugin compatibility."]
+    },
+    {
+      "name": "to-tickets",
+      "source": "https://github.com/mattpocock/skills",
+      "sourcePath": "skills/engineering/to-tickets",
+      "sourceIdentity": "git:6acc160e4e0cd062dbbbd7a1b26ae92855edf07e",
+      "contentHash": "94168e5c3ebdc425ce232aa7827f808bd486dc39aa85ec2378aab5b8d8843666",
+      "sourceContentHash": "b9eb31fb1c671feb6ba56dc8afc86f5da9992aa307e9e0e0449aee2d4d55f1f2",
+      "licenseNotice": "THIRD_PARTY_NOTICES/mattpocock-skills-MIT.txt",
+      "modifications": ["Set disable-model-invocation to false for Codex plugin compatibility."]
+    },
+    {
+      "name": "tdd",
+      "source": "https://github.com/mattpocock/skills",
+      "sourcePath": "skills/engineering/tdd",
+      "sourceIdentity": "git:6acc160e4e0cd062dbbbd7a1b26ae92855edf07e",
+      "contentHash": "020e48193f19c303f462ac6c6bf16548f10e3b1f706df562f8fb8f6b3efb43a6",
+      "licenseNotice": "THIRD_PARTY_NOTICES/mattpocock-skills-MIT.txt"
+    },
+    {
+      "name": "implement",
+      "source": "https://github.com/mattpocock/skills",
+      "sourcePath": "skills/engineering/implement",
+      "sourceIdentity": "git:6acc160e4e0cd062dbbbd7a1b26ae92855edf07e",
+      "contentHash": "b45c071e08518b3e47cc36d4644adaee0febb73a10ff32828e49c70efe97cac7",
+      "sourceContentHash": "1a7a56bca542f46ff8e42fa5ddd293dab21b38b6dad57e1bf3e76d12e41c5fc2",
+      "licenseNotice": "THIRD_PARTY_NOTICES/mattpocock-skills-MIT.txt",
+      "modifications": ["Set disable-model-invocation to false for Codex plugin compatibility."]
+    },
+    {
+      "name": "code-review",
+      "source": "https://github.com/mattpocock/skills",
+      "sourcePath": "skills/engineering/code-review",
+      "sourceIdentity": "git:6acc160e4e0cd062dbbbd7a1b26ae92855edf07e",
+      "contentHash": "45b9d5e7742f65efda4f5fc53d377f50b451da3687ded48f41b7ae565f8742c8",
+      "licenseNotice": "THIRD_PARTY_NOTICES/mattpocock-skills-MIT.txt"
+    },
+    {
+      "name": "handoff",
+      "source": "https://github.com/mattpocock/skills",
+      "sourcePath": "skills/productivity/handoff",
+      "sourceIdentity": "git:6acc160e4e0cd062dbbbd7a1b26ae92855edf07e",
+      "contentHash": "eb22dceff96dba6afe801efa6b7e4fcad34d120c1b36da7cd3e60a28ce64687e",
+      "sourceContentHash": "c97a305f5ca0b6fa21ca82a009ac5a553acd02aab63cf59de939f75ac7797393",
+      "licenseNotice": "THIRD_PARTY_NOTICES/mattpocock-skills-MIT.txt",
+      "modifications": ["Set disable-model-invocation to false for Codex plugin compatibility."]
+    }
+  ]
+}

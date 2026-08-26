@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.wrangler/
+coverage/
+.superpowers/
+.dev.vars
+.dev.vars.*
+.env
+.env.*
+.oio.local.env
+.DS_Store
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*

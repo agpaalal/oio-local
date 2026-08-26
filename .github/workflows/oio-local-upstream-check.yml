@@ -1,0 +1,36 @@
+name: OIO Local upstream skill check
+
+on:
+  schedule:
+    - cron: '17 13 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out OIO Local
+        uses: actions/checkout@v4
+        with:
+          path: oio
+      - name: Check out canonical Matt Pocock skills
+        uses: actions/checkout@v4
+        with:
+          repository: mattpocock/skills
+          path: upstream
+      - name: Build isolated read-only candidate
+        run: >-
+          node oio/plugins/oio-local/scripts/check-upstream.mjs
+          --active-plugin "$GITHUB_WORKSPACE/oio/plugins/oio-local"
+          --upstream "$GITHUB_WORKSPACE/upstream"
+          --candidate-root "$RUNNER_TEMP/oio-local-candidates"
+      - name: Upload candidate proposal when present
+        uses: actions/upload-artifact@v4
+        with:
+          name: oio-local-upstream-candidate
+          path: ${{ runner.temp }}/oio-local-candidates
+          if-no-files-found: ignore
+          retention-days: 14

@@ -1,0 +1,21 @@
+{
+  "allowedEffects": [],
+  "input": "test-node/fixtures/oio-local/claude-live-request.json",
+  "modelProfile": "claude-sonnet",
+  "objective": "Interpret the support request and draft a grounded reply and task list.",
+  "outputContract": [
+    "agent",
+    "category",
+    "packetFingerprint",
+    "priority",
+    "reply",
+    "requestId",
+    "taskId",
+    "tasks"
+  ],
+  "packetFingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "requestId": "REQ-11111111-1111-4111-8111-111111111111",
+  "returnTo": "main-chat",
+  "role": "support-request-interpreter",
+  "stepId": "S1"
+}

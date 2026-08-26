@@ -1,0 +1,19 @@
+{
+  "name": "@oioco/oio-local",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Outcome-first local implementation guidance for Codex and Claude Code",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "test": "vitest run --config vitest.node.config.ts",
+    "test:release": "vitest run test-node/oio-local-release-qualification.test.ts --config vitest.node.config.ts",
+    "qualify": "node plugins/oio-local/scripts/qualify-release.mjs"
+  },
+  "devDependencies": {
+    "vitest": "4.1.10"
+  }
+}

@@ -1,0 +1,7 @@
+interface:
+  display_name: "OIO Review Artifact"
+  short_description: "Build interactive OIO review packages"
+  brand_color: "#6941C6"
+  default_prompt: "Use $oio-review-artifact to create an interactive OIO review package from these approved records."
+policy:
+  allow_implicit_invocation: true

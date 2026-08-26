@@ -1,0 +1,7 @@
+{
+  "customer": "Jamie Rivera",
+  "email": "jamie@example.com",
+  "message": "I was charged twice for order ORD-1042. Please refund the duplicate charge.",
+  "orderId": "ORD-1042",
+  "subject": "Duplicate charge"
+}
