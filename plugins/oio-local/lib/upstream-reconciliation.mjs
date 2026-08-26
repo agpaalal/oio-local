@@ -298,10 +298,10 @@ async function loadDecision({ approvalFingerprint: expected, candidateDirectory 
 }
 
 async function decisionReceipt({ approvalFingerprint: fingerprint_, candidateDirectory, decision, human, receiptId }) {
-  if (!human || !receiptId || !fingerprint_) throw new Error("Human identity, receipt id, and approval fingerprint are required");
+  if (typeof human !== "string" || human.trim().length === 0 || !receiptId || !fingerprint_) throw new Error("Human identity, receipt id, and approval fingerprint are required");
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(receiptId)) throw new Error("Receipt id must be one safe filename component");
   const { candidate, qualification } = await loadDecision({ approvalFingerprint: fingerprint_, candidateDirectory });
-  const receipt = { approvalFingerprint: fingerprint_, candidateId: candidate.id, decidedAt: new Date().toISOString(), decision, human, qualificationHash: qualification.evidenceHash, receiptId, sourceIdentity: candidate.sourceIdentity };
+  const receipt = { approvalFingerprint: fingerprint_, candidateId: candidate.id, decidedAt: new Date().toISOString(), decision, human: human.trim(), qualificationHash: qualification.evidenceHash, receiptId, sourceIdentity: candidate.sourceIdentity };
   await writeJsonAtomic(path.join(candidateDirectory, "receipts", `${receiptId}.json`), receipt);
   return receipt;
 }
@@ -319,23 +319,34 @@ async function proveRollbackMechanism(activePluginRoot, candidateBundle) {
   } finally { await rm(root, { force: true, recursive: true }); }
 }
 
-async function recoverInterruptedAcceptance(receiptPath, requestedActive) {
+async function sameAcceptanceTarget(prior, requestedActive) {
+  const requestedIdentity = prior.paths?.requestedActive ?? prior.paths?.active;
+  if (requestedIdentity === requestedActive) return true;
+  if (prior.paths?.requestedActive || !prior.paths?.active) return false;
+  const canonicalParent = await realpath(path.dirname(requestedActive)).catch(() => null);
+  return canonicalParent !== null &&
+    path.join(canonicalParent, path.basename(requestedActive)) === prior.paths.active;
+}
+
+async function recoverInterruptedAcceptance(receiptPath, requestedActive, expectedBundleHash) {
   if (!(await exists(receiptPath))) return null;
   const prior = await readJson(receiptPath);
   if (prior.decision === "accepted") {
+    if (
+      !(await sameAcceptanceTarget(prior, requestedActive)) ||
+      prior.candidateBundleHash !== expectedBundleHash ||
+      !(await exists(requestedActive)) ||
+      (await treeHash(requestedActive)) !== expectedBundleHash
+    ) {
+      throw new Error("accepted receipt does not match the requested active plugin and current bundle");
+    }
     if (prior.paths?.backup) await rm(prior.paths.backup, { force: true, recursive: true });
     if (prior.paths?.staging) await rm(prior.paths.staging, { force: true, recursive: true });
     return prior;
   }
   if (prior.decision !== "accepting") return null;
   const { backup, staging } = prior.paths ?? {};
-  const requestedIdentity = prior.paths?.requestedActive ?? prior.paths?.active;
-  let sameActive = requestedIdentity === requestedActive;
-  if (!sameActive && !prior.paths?.requestedActive && prior.paths?.active) {
-    const canonicalParent = await realpath(path.dirname(requestedActive)).catch(() => null);
-    sameActive = canonicalParent !== null &&
-      path.join(canonicalParent, path.basename(requestedActive)) === prior.paths.active;
-  }
+  const sameActive = await sameAcceptanceTarget(prior, requestedActive);
   const mutationActive = prior.paths?.active;
   if (!backup || !staging || !mutationActive || !sameActive) {
     throw new Error("interrupted acceptance receipt has no recoverable paths");
@@ -354,12 +365,12 @@ async function recoverInterruptedAcceptance(receiptPath, requestedActive) {
 }
 
 export async function acceptUpstreamCandidate({ activePluginRoot, approvalFingerprint: fingerprint_, candidateDirectory, failAfterApply = false, failReceiptWrite = false, human, receiptId }) {
-  if (!human || !receiptId || !fingerprint_) throw new Error("Human identity, receipt id, and approval fingerprint are required");
+  if (typeof human !== "string" || human.trim().length === 0 || !receiptId || !fingerprint_) throw new Error("Human identity, receipt id, and approval fingerprint are required");
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(receiptId)) throw new Error("Receipt id must be one safe filename component");
   const { bundleRoot, candidate, qualification } = await loadDecision({ approvalFingerprint: fingerprint_, candidateDirectory });
   const requestedActive = path.resolve(activePluginRoot);
   const receiptPath = path.join(candidateDirectory, "receipts", `${receiptId}.json`);
-  const earlyRecovered = await recoverInterruptedAcceptance(receiptPath, requestedActive);
+  const earlyRecovered = await recoverInterruptedAcceptance(receiptPath, requestedActive, candidate.bundleHash);
   if (earlyRecovered) return earlyRecovered;
   const active = await realpath(activePluginRoot);
   const parent = path.dirname(active); const base = path.basename(active);
@@ -368,7 +379,8 @@ export async function acceptUpstreamCandidate({ activePluginRoot, approvalFinger
   if ((await treeHash(active)) !== candidate.activeBundleHash) throw new Error("active bundle changed since candidate creation");
   const rollbackProof = await proveRollbackMechanism(active, bundleRoot);
   const intent = {
-    approvalFingerprint: fingerprint_, candidateId: candidate.id, decision: "accepting", human,
+    approvalFingerprint: fingerprint_, candidateBundleHash: candidate.bundleHash,
+    candidateId: candidate.id, decision: "accepting", human: human.trim(),
     paths: { active, backup, requestedActive, staging }, qualificationHash: qualification.evidenceHash,
     receiptId, sourceIdentity: candidate.sourceIdentity,
   };

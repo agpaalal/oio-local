@@ -370,18 +370,21 @@ export function prepareHarnessTransferRecord({
     }
     if (request.state !== RequestState.CLOSED) {
       const unresolvedHold = database.prepare(`
-        SELECT code FROM holds WHERE request_id = ? AND resolved_at IS NULL
-        ORDER BY occurred_at DESC LIMIT 1
+        SELECT code FROM holds
+        WHERE request_id = ?
+          AND resolved_at IS NULL
+          AND code IN (
+            'EXECUTION_PACKET_REQUIRED',
+            'INVALID_AGENT_IDENTITY',
+            'INVALID_AGENT_RESULT',
+            'INVALID_EXECUTION_PACKET',
+            'RESULT_READBACK_FAILED',
+            'UNAUTHORIZED_EXTERNAL_CLAIM'
+          )
+        ORDER BY occurred_at DESC, rowid DESC
+        LIMIT 1
       `).get(requestId);
-      const qualifyingWorkflowHolds = new Set([
-        "EXECUTION_PACKET_REQUIRED",
-        "INVALID_AGENT_IDENTITY",
-        "INVALID_AGENT_RESULT",
-        "INVALID_EXECUTION_PACKET",
-        "RESULT_READBACK_FAILED",
-        "UNAUTHORIZED_EXTERNAL_CLAIM",
-      ]);
-      if (!qualifyingWorkflowHolds.has(unresolvedHold?.code)) {
+      if (!unresolvedHold) {
         throw new JourneyHold(
           "HARNESS_TRANSFER_NOT_ALLOWED",
           "The active request has no unresolved workflow hold that permits a harness transfer.",

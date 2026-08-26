@@ -23,6 +23,13 @@ import { JourneyHold } from "./local-state.mjs";
 
 function parse(commandLine) {
   const [command, ...pairs] = commandLine;
+  if (typeof command !== "string" || command.trim().length === 0) {
+    throw new JourneyHold(
+      "INVALID_JOURNEY_ARGUMENTS",
+      "A journey command is required.",
+      "Provide a supported command followed by --name value pairs.",
+    );
+  }
   const values = {};
   for (let index = 0; index < pairs.length; index += 2) {
     const key = pairs[index];

@@ -187,6 +187,23 @@ describe("OIO Local upstream skill reconciliation", () => {
       candidateDirectory: candidate.directory, human: "Alejandro", receiptId: "UPSTREAM-ACCEPT-1",
     });
     expect(accepted).toMatchObject({ decision: "accepted", health: "passed", rollbackProof: "passed" });
+    const repeated = await acceptUpstreamCandidate({
+      activePluginRoot: activePlugin, approvalFingerprint: qualified.approvalFingerprint,
+      candidateDirectory: candidate.directory, human: "Alejandro", receiptId: "UPSTREAM-ACCEPT-1",
+    });
+    expect(repeated).toEqual(accepted);
+
+    const otherActivePlugin = await copyPlugin();
+    await expect(acceptUpstreamCandidate({
+      activePluginRoot: otherActivePlugin, approvalFingerprint: qualified.approvalFingerprint,
+      candidateDirectory: candidate.directory, human: "Alejandro", receiptId: "UPSTREAM-ACCEPT-1",
+    })).rejects.toThrow("does not match the requested active plugin");
+
+    await writeFile(path.join(activePlugin, "post-acceptance-change.txt"), "changed\n", "utf8");
+    await expect(acceptUpstreamCandidate({
+      activePluginRoot: activePlugin, approvalFingerprint: qualified.approvalFingerprint,
+      candidateDirectory: candidate.directory, human: "Alejandro", receiptId: "UPSTREAM-ACCEPT-1",
+    })).rejects.toThrow("does not match the requested active plugin");
   });
 
   it("rejects receipt ids that can escape the candidate receipt directory", async () => {
@@ -205,6 +222,19 @@ describe("OIO Local upstream skill reconciliation", () => {
       human: "Alejandro",
       receiptId: "../candidate",
     })).rejects.toThrow("safe filename component");
+    await expect(acceptUpstreamCandidate({
+      activePluginRoot: activePlugin,
+      approvalFingerprint: qualified.approvalFingerprint,
+      candidateDirectory: candidate.directory,
+      human: "   ",
+      receiptId: "BLANK-HUMAN",
+    })).rejects.toThrow("Human identity");
+    await expect(deferUpstreamCandidate({
+      approvalFingerprint: qualified.approvalFingerprint,
+      candidateDirectory: candidate.directory,
+      human: "   ",
+      receiptId: "BLANK-DEFER-HUMAN",
+    })).rejects.toThrow("Human identity");
   });
 
   it("rejects post-qualification bundle or metadata mutation", async () => {

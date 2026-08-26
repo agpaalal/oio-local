@@ -167,6 +167,35 @@ describe("OIO Local Codex installation seam", () => {
       exitCode: 2,
       output: { code: "INVALID_JOURNEY_ARGUMENTS", state: "HELD" },
     });
+
+    const missingCommand = await runJson(
+      path.join(repositoryRoot, "plugins/oio-local/scripts/codex/journey.mjs"),
+      [],
+      process.env,
+    );
+    expect(missingCommand).toMatchObject({
+      exitCode: 2,
+      output: { code: "INVALID_JOURNEY_ARGUMENTS", state: "HELD" },
+    });
+  });
+
+  it("preserves a corrupt pre-install inventory and holds setup", async () => {
+    const projectDirectory = await temporaryDirectory("oio-local-corrupt-inventory-");
+    const stateDirectory = path.join(projectDirectory, ".oio-local");
+    await mkdir(stateDirectory);
+    await writeFile(path.join(stateDirectory, "pre-install-inventory.json"), "not json\n", "utf8");
+    const dopplerDirectory = await fakeDopplerDirectory();
+    const result = await runJson(
+      setupScript,
+      ["--project", projectDirectory, "--language", "en", "--harness", "codex"],
+      { ...process.env, PATH: `${dopplerDirectory}:${process.env.PATH ?? ""}` },
+    );
+    expect(result).toMatchObject({
+      exitCode: 2,
+      output: { code: "PREINSTALL_INVENTORY_INVALID", status: "held" },
+    });
+    expect(await readFile(path.join(stateDirectory, "pre-install-inventory.json"), "utf8"))
+      .toBe("not json\n");
   });
 
   it("is discoverable through a clean Codex plugin host", async () => {

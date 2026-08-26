@@ -355,8 +355,22 @@ async function recordInventory(project, harness, language, compatibility, enviro
     hostCaptureStatus: preinstallState ? "verified" : "missing",
     hostSnapshotFingerprint: preinstallState?.snapshotFingerprint ?? null,
   };
-  try {
-    const existing = await readJson(inventoryPath);
+  if (await exists(inventoryPath)) {
+    let existing;
+    try {
+      existing = await readJson(inventoryPath);
+    } catch {
+      throw new SetupHold("PREINSTALL_INVENTORY_INVALID", {
+        en: {
+          message: "The existing pre-install inventory is unreadable or invalid.",
+          recoveryAction: "Restore the original inventory before retrying setup.",
+        },
+        es: {
+          message: "El inventario de preinstalación existente no se puede leer o no es válido.",
+          recoveryAction: "Restaura el inventario original antes de volver a intentar la configuración.",
+        },
+      });
+    }
     const harnessInventories = existing.harnessInventories ?? {
       [existing.harness]: {
         hostBeforeInstall: existing.hostBeforeInstall,
@@ -364,7 +378,9 @@ async function recordInventory(project, harness, language, compatibility, enviro
         hostSnapshotFingerprint: existing.hostSnapshotFingerprint,
       },
     };
-    if (!harnessInventories[harness]) harnessInventories[harness] = hostState;
+    if (!harnessInventories[harness] || hostState.hostCaptureStatus === "verified") {
+      harnessInventories[harness] = hostState;
+    }
     const activeHostState = harnessInventories[harness];
     const updated = {
       ...existing,
@@ -377,32 +393,31 @@ async function recordInventory(project, harness, language, compatibility, enviro
     };
     await atomicJsonWrite(inventoryPath, updated);
     return updated;
-  } catch {
-    const inventory = {
-      admittedSkills: compatibility.skills.map((skill) => ({
-        name: skill.name,
-        sourceIdentity: skill.sourceIdentity,
-      })),
-      harness,
-      language,
-      harnessConfiguration: {
-        configPresent: codexHome
-          ? await exists(path.join(codexHome, "config.toml"))
-          : null,
-        mutatedBySetup: false,
-      },
-      harnessInventories: { [harness]: hostState },
-      ...hostState,
-      inventoryBoundary: "before-project-setup",
-      oioOwnedPathsBeforeInstall,
-      plannedOioOwnedPaths,
-      pluginPath: pluginRoot,
-      recordedAt: new Date().toISOString(),
-      secretValuesRecorded: false,
-    };
-    await atomicJsonWrite(inventoryPath, inventory);
-    return inventory;
   }
+  const inventory = {
+    admittedSkills: compatibility.skills.map((skill) => ({
+      name: skill.name,
+      sourceIdentity: skill.sourceIdentity,
+    })),
+    harness,
+    language,
+    harnessConfiguration: {
+      configPresent: codexHome
+        ? await exists(path.join(codexHome, "config.toml"))
+        : null,
+      mutatedBySetup: false,
+    },
+    harnessInventories: { [harness]: hostState },
+    ...hostState,
+    inventoryBoundary: "before-project-setup",
+    oioOwnedPathsBeforeInstall,
+    plannedOioOwnedPaths,
+    pluginPath: pluginRoot,
+    recordedAt: new Date().toISOString(),
+    secretValuesRecorded: false,
+  };
+  await atomicJsonWrite(inventoryPath, inventory);
+  return inventory;
 }
 
 function initializeDatabase(target, result) {

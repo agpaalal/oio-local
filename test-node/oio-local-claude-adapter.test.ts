@@ -391,11 +391,17 @@ describe("OIO Local Claude Code adapter", () => {
     ], environment)).exitCode).toBe(0);
     const holdDatabase = new DatabaseSync(path.join(project, ".oio-local/state.sqlite3"));
     try {
+      const occurredAt = new Date().toISOString();
       holdDatabase.prepare(`
         INSERT INTO holds (
           id, request_id, code, message, recovery_action, details_json, occurred_at, resolved_at
         ) VALUES (?, ?, 'INVALID_AGENT_RESULT', 'Invalid child result', 'Retry S1', '{}', ?, NULL)
-      `).run("HOLD-transfer-fixture", started.output.requestId, new Date().toISOString());
+      `).run("HOLD-transfer-fixture", started.output.requestId, occurredAt);
+      holdDatabase.prepare(`
+        INSERT INTO holds (
+          id, request_id, code, message, recovery_action, details_json, occurred_at, resolved_at
+        ) VALUES (?, ?, 'HARNESS_TRANSFER_NOT_ALLOWED', 'Rejected transfer', 'Continue', '{}', ?, NULL)
+      `).run("HOLD-transfer-noise", started.output.requestId, occurredAt);
     } finally {
       holdDatabase.close();
     }

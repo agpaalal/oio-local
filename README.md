@@ -23,7 +23,7 @@ runtime.
 ## Requirements
 
 - macOS;
-- Node.js 22.5 or newer;
+- Node.js 22.13 or newer;
 - Codex CLI 0.149.1 or newer, or Claude Code;
 - Doppler CLI for requests that require secrets;
 - Git for installation from this repository.
