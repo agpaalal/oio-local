@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -102,6 +103,40 @@ esac
   return directory;
 }
 
+function canonical(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.keys(value as Record<string, unknown>)
+        .sort()
+        .map((key) => [key, canonical((value as Record<string, unknown>)[key])]),
+    );
+  }
+  return value;
+}
+
+function verifiedHostState(
+  harness: "codex" | "claude",
+  hostBeforeInstall: Record<string, unknown>,
+  capturedAt = "2026-08-24T00:00:00.000Z",
+) {
+  const hostSnapshotIdentity = {
+    capturedAt,
+    harness,
+    hostBeforeInstall,
+    version: 1,
+  };
+  const hostSnapshotFingerprint = createHash("sha256")
+    .update(JSON.stringify(canonical(hostSnapshotIdentity)))
+    .digest("hex");
+  return {
+    hostBeforeInstall,
+    hostCaptureStatus: "verified",
+    hostSnapshotFingerprint,
+    hostSnapshotIdentity,
+  };
+}
+
 async function projectFixture(
   harness: "codex" | "claude",
   partial = false,
@@ -115,9 +150,7 @@ async function projectFixture(
     harness,
     language,
     harnessConfiguration: { mutatedBySetup: false },
-    hostBeforeInstall,
-    hostCaptureStatus: "verified",
-    hostSnapshotFingerprint: "a".repeat(64),
+    ...verifiedHostState(harness, hostBeforeInstall),
     inventoryBoundary: "before-project-setup",
     oioOwnedPathsBeforeInstall: [],
     plannedOioOwnedPaths: [".oio-local/state.sqlite3"],
@@ -187,22 +220,27 @@ afterEach(async () => {
 });
 
 describe("OIO Local safe uninstall", () => {
+  it("rejects a verified inventory whose recorded baseline was modified", async () => {
+    const project = await projectFixture("codex");
+    const inventoryPath = path.join(project, ".oio-local/pre-install-inventory.json");
+    const inventory = JSON.parse(await readFile(inventoryPath, "utf8"));
+    inventory.hostBeforeInstall = {
+      marketplace: null,
+      plugin: { name: "oio-local", version: "tampered" },
+    };
+    await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`, "utf8");
+    await expect(createUninstallPlan({ project }))
+      .rejects.toMatchObject({ code: "UNINSTALL_OWNERSHIP_UNKNOWN" });
+  });
+
   it("restores every verified harness activated for one project", async () => {
     const project = await projectFixture("codex");
     const inventoryPath = path.join(project, ".oio-local/pre-install-inventory.json");
     const inventory = JSON.parse(await readFile(inventoryPath, "utf8"));
     inventory.harness = "claude";
     inventory.harnessInventories = {
-      codex: {
-        hostBeforeInstall: { marketplace: null, plugin: null },
-        hostCaptureStatus: "verified",
-        hostSnapshotFingerprint: "a".repeat(64),
-      },
-      claude: {
-        hostBeforeInstall: { marketplace: null, plugin: null },
-        hostCaptureStatus: "verified",
-        hostSnapshotFingerprint: "b".repeat(64),
-      },
+      codex: verifiedHostState("codex", { marketplace: null, plugin: null }),
+      claude: verifiedHostState("claude", { marketplace: null, plugin: null }),
     };
     await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`, "utf8");
     const codex = await fakeHost();

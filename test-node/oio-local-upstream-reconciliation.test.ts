@@ -193,6 +193,22 @@ describe("OIO Local upstream skill reconciliation", () => {
     });
     expect(repeated).toEqual(accepted);
 
+    const receiptPath = path.join(candidate.directory, "receipts/UPSTREAM-ACCEPT-1.json");
+    const acceptedReceipt = JSON.parse(await readFile(receiptPath, "utf8"));
+    const protectedDirectory = await temporaryDirectory("oio-local-protected-receipt-target-");
+    const protectedFile = path.join(protectedDirectory, "preserve.txt");
+    await writeFile(protectedFile, "preserve\n", "utf8");
+    await writeFile(receiptPath, `${JSON.stringify({
+      ...acceptedReceipt,
+      paths: { ...acceptedReceipt.paths, staging: protectedDirectory },
+    })}\n`, "utf8");
+    await expect(acceptUpstreamCandidate({
+      activePluginRoot: activePlugin, approvalFingerprint: qualified.approvalFingerprint,
+      candidateDirectory: candidate.directory, human: "Alejandro", receiptId: "UPSTREAM-ACCEPT-1",
+    })).rejects.toThrow("unsafe generated path");
+    expect(await readFile(protectedFile, "utf8")).toBe("preserve\n");
+    await writeFile(receiptPath, `${JSON.stringify(acceptedReceipt)}\n`, "utf8");
+
     const otherActivePlugin = await copyPlugin();
     await expect(acceptUpstreamCandidate({
       activePluginRoot: otherActivePlugin, approvalFingerprint: qualified.approvalFingerprint,
@@ -275,8 +291,14 @@ describe("OIO Local upstream skill reconciliation", () => {
       upstreamRoot: upstream.root,
     });
     const qualified = await qualification(candidate.directory);
-    const backup = `${activePlugin}.interrupted-backup`;
-    const staging = `${activePlugin}.interrupted-staging`;
+    const backup = path.join(
+      path.dirname(activePlugin),
+      `.${path.basename(activePlugin)}.rollback-interrupted`,
+    );
+    const staging = path.join(
+      path.dirname(activePlugin),
+      `.${path.basename(activePlugin)}.candidate-interrupted`,
+    );
     await rename(activePlugin, backup);
     await cp(path.join(candidate.directory, "bundle"), activePlugin, { recursive: true });
     const canonicalActive = await realpath(activePlugin);
@@ -312,8 +334,14 @@ describe("OIO Local upstream skill reconciliation", () => {
       upstreamRoot: upstream.root,
     });
     const qualified = await qualification(candidate.directory);
-    const backup = `${activePlugin}.critical-gap-backup`;
-    const staging = `${activePlugin}.critical-gap-staging`;
+    const backup = path.join(
+      path.dirname(activePlugin),
+      `.${path.basename(activePlugin)}.rollback-critical-gap`,
+    );
+    const staging = path.join(
+      path.dirname(activePlugin),
+      `.${path.basename(activePlugin)}.candidate-critical-gap`,
+    );
     const canonicalActive = path.join(await realpath(path.dirname(activePlugin)), path.basename(activePlugin));
     await cp(path.join(candidate.directory, "bundle"), staging, { recursive: true });
     await rename(activePlugin, backup);

@@ -353,6 +353,12 @@ async function recordInventory(project, harness, language, compatibility, enviro
   const hostState = {
     hostBeforeInstall: preinstallState?.hostBeforeInstall ?? { marketplace: null, plugin: null },
     hostCaptureStatus: preinstallState ? "verified" : "missing",
+    hostSnapshotIdentity: preinstallState ? {
+      capturedAt: preinstallState.capturedAt,
+      harness: preinstallState.harness,
+      hostBeforeInstall: preinstallState.hostBeforeInstall,
+      version: preinstallState.version,
+    } : null,
     hostSnapshotFingerprint: preinstallState?.snapshotFingerprint ?? null,
   };
   if (await exists(inventoryPath)) {
@@ -375,6 +381,7 @@ async function recordInventory(project, harness, language, compatibility, enviro
       [existing.harness]: {
         hostBeforeInstall: existing.hostBeforeInstall,
         hostCaptureStatus: existing.hostCaptureStatus,
+        hostSnapshotIdentity: existing.hostSnapshotIdentity,
         hostSnapshotFingerprint: existing.hostSnapshotFingerprint,
       },
     };

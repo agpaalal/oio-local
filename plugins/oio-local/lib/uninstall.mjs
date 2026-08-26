@@ -297,6 +297,7 @@ async function inventoryFor(project) {
       [inventory.harness]: {
         hostBeforeInstall: inventory.hostBeforeInstall,
         hostCaptureStatus: inventory.hostCaptureStatus,
+        hostSnapshotIdentity: inventory.hostSnapshotIdentity,
         hostSnapshotFingerprint: inventory.hostSnapshotFingerprint,
       },
     };
@@ -307,7 +308,11 @@ async function inventoryFor(project) {
       Object.entries(harnessInventories).some(([harness, item]) =>
         !["codex", "claude"].includes(harness) ||
         item?.hostCaptureStatus !== "verified" ||
-        !/^[a-f0-9]{64}$/u.test(item?.hostSnapshotFingerprint ?? "")
+        !/^[a-f0-9]{64}$/u.test(item?.hostSnapshotFingerprint ?? "") ||
+        item?.hostSnapshotIdentity?.harness !== harness ||
+        item?.hostSnapshotIdentity?.version !== 1 ||
+        fingerprint(item.hostSnapshotIdentity) !== item.hostSnapshotFingerprint ||
+        !sameRegistration(item.hostSnapshotIdentity.hostBeforeInstall, item.hostBeforeInstall)
       ) ||
       !Array.isArray(inventory.admittedSkills) ||
       !inventory.pluginPath

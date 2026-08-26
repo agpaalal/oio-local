@@ -328,6 +328,26 @@ async function sameAcceptanceTarget(prior, requestedActive) {
     path.join(canonicalParent, path.basename(requestedActive)) === prior.paths.active;
 }
 
+async function assertGeneratedAcceptancePaths(prior) {
+  const active = prior.paths?.active;
+  if (typeof active !== "string") throw new Error("acceptance receipt has no active plugin path");
+  const parent = await realpath(path.dirname(active));
+  const base = path.basename(active);
+  const expected = [
+    [prior.paths?.backup, `.${base}.rollback-`],
+    [prior.paths?.staging, `.${base}.candidate-`],
+  ];
+  for (const [target, prefix] of expected) {
+    if (
+      typeof target !== "string" ||
+      await realpath(path.dirname(path.resolve(target))).catch(() => null) !== parent ||
+      !path.basename(target).startsWith(prefix)
+    ) {
+      throw new Error("acceptance receipt contains an unsafe generated path");
+    }
+  }
+}
+
 async function recoverInterruptedAcceptance(receiptPath, requestedActive, expectedBundleHash) {
   if (!(await exists(receiptPath))) return null;
   const prior = await readJson(receiptPath);
@@ -340,11 +360,13 @@ async function recoverInterruptedAcceptance(receiptPath, requestedActive, expect
     ) {
       throw new Error("accepted receipt does not match the requested active plugin and current bundle");
     }
+    await assertGeneratedAcceptancePaths(prior);
     if (prior.paths?.backup) await rm(prior.paths.backup, { force: true, recursive: true });
     if (prior.paths?.staging) await rm(prior.paths.staging, { force: true, recursive: true });
     return prior;
   }
   if (prior.decision !== "accepting") return null;
+  await assertGeneratedAcceptancePaths(prior);
   const { backup, staging } = prior.paths ?? {};
   const sameActive = await sameAcceptanceTarget(prior, requestedActive);
   const mutationActive = prior.paths?.active;
