@@ -185,6 +185,30 @@ describe("OIO Local Codex installation seam", () => {
     });
   });
 
+  it("returns a structured hold for an unreadable support request", async () => {
+    const projectDirectory = await temporaryDirectory("oio-local-unreadable-request-");
+    const dopplerDirectory = await fakeDopplerDirectory();
+    const environment = {
+      ...process.env,
+      PATH: `${dopplerDirectory}:${process.env.PATH ?? ""}`,
+    };
+    expect((await runJson(setupScript, [
+      "--project", projectDirectory, "--language", "en", "--harness", "codex",
+    ], environment)).exitCode).toBe(0);
+    const requestPath = path.join(projectDirectory, "request.json");
+    await writeFile(requestPath, "not json\n", "utf8");
+
+    const result = await runJson(
+      path.join(repositoryRoot, "plugins/oio-local/scripts/codex/journey.mjs"),
+      ["start", "--project", projectDirectory, "--request", requestPath],
+      environment,
+    );
+    expect(result).toMatchObject({
+      exitCode: 2,
+      output: { code: "INVALID_SUPPORT_REQUEST", state: "HELD" },
+    });
+  });
+
   it("preserves a corrupt pre-install inventory and holds setup", async () => {
     const projectDirectory = await temporaryDirectory("oio-local-corrupt-inventory-");
     const stateDirectory = path.join(projectDirectory, ".oio-local");

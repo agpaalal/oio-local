@@ -297,6 +297,24 @@ describe("OIO Local upstream skill reconciliation", () => {
     })).rejects.toThrow("identity changed");
   });
 
+  it("rejects candidate metadata mutation before qualification", async () => {
+    const activePlugin = await copyPlugin();
+    const upstream = await materializeUpstream(activePlugin); await commitChange(upstream);
+    const candidate = await createUpstreamCandidate({
+      activePluginRoot: activePlugin,
+      candidateRoot: await temporaryDirectory("oio-local-candidates-"),
+      upstreamRoot: upstream.root,
+    });
+    const candidatePath = path.join(candidate.directory, "candidate.json");
+    const metadata = JSON.parse(await readFile(candidatePath, "utf8"));
+    metadata.diffSummary = metadata.diffSummary.map((item: any) => ({ ...item, changed: false }));
+    await writeFile(candidatePath, `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
+
+    await expect(qualifyUpstreamCandidate({
+      candidateDirectory: candidate.directory,
+    })).rejects.toThrow("candidate identity");
+  });
+
   it("rejects dirty upstream bytes that are not represented by HEAD", async () => {
     const activePlugin = await copyPlugin();
     const upstream = await materializeUpstream(activePlugin);

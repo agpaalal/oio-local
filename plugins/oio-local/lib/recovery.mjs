@@ -232,6 +232,17 @@ async function requireSnapshotEntry(root, relativePath, expectedKind) {
 }
 
 async function verifySnapshotRootEntries(root) {
+  const entries = await readdir(root, { withFileTypes: true });
+  const names = entries.map((entry) => entry.name).sort();
+  const expected = ["manifest.json", "request", "state.sqlite3"];
+  if (JSON.stringify(names) !== JSON.stringify(expected)) {
+    throw new JourneyHold(
+      "INVALID_BACKUP_MANIFEST",
+      "The backup root contains an undeclared entry.",
+      "Use a self-contained snapshot containing only its manifest, database, and request directory.",
+      { entries: names },
+    );
+  }
   await Promise.all([
     requireSnapshotEntry(root, "manifest.json", "file"),
     requireSnapshotEntry(root, "state.sqlite3", "file"),

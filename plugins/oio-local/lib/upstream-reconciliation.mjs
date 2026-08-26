@@ -165,6 +165,23 @@ function approvalFingerprint(candidate, qualificationHash) {
   return hashJson({ bundleHash: candidate.bundleHash, candidateId: candidate.id, qualificationHash, sourceIdentity: candidate.sourceIdentity });
 }
 
+function immutableCandidateId(candidate) {
+  return `UPSTREAM-${hashJson({
+    activeBundleHash: candidate.activeBundleHash,
+    affectedLifecycleSteps: candidate.affectedLifecycleSteps,
+    bundleHash: candidate.bundleHash,
+    diffSummary: candidate.diffSummary,
+    sourceIdentity: candidate.sourceIdentity,
+  }).slice(0, 16)}`;
+}
+
+function assertCandidateIdentity(candidate, candidateDirectory) {
+  if (
+    candidate.id !== immutableCandidateId(candidate) ||
+    path.basename(path.resolve(candidateDirectory)) !== candidate.id
+  ) throw new Error("candidate identity is not immutable");
+}
+
 function proposalHtml(candidate) {
   const changes = candidate.diffSummary.filter((item) => item.changed).map((item) => `<li><strong>${item.name}</strong> — <code>${item.before}</code> → <code>${item.after}</code></li>`).join("");
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${candidate.id}</title></head><body><main><h1>OIO Local upstream candidate</h1><p>Candidate: <code>${candidate.id}</code></p><p>Source: <code>${candidate.sourceIdentity}</code></p><p>Bundle: <code>${candidate.bundleHash}</code></p><p>Status: qualification required. The admitted bundle is unchanged.</p><h2>Behavior changes</h2><ul>${changes}</ul><h2>Expected benefit</h2><p>Bring the admitted lifecycle methods to the exact reviewed upstream versions for ${candidate.affectedLifecycleSteps.join(", ") || "the affected OIO Local steps"}.</p><h2>Risks</h2><p>Changed skill instructions can alter questions, artifacts, delegation, or proof behavior. No candidate is eligible until every changed skill is invoked through both supported harnesses and languages.</p><h2>Compatibility</h2><p>The candidate must preserve the OIO controller boundary, package identities, English and Spanish journeys, Codex behavior, and Claude behavior.</p><h2>Rollback</h2><p>The current admitted bundle stays active during qualification. Acceptance rehearses and preserves a complete same-filesystem rollback before replacement.</p><p>After native qualification, review the exact approval fingerprint in qualification.json and choose Accept or Defer.</p></main></body></html>`;
@@ -213,21 +230,28 @@ export async function createUpstreamCandidate({ activePluginRoot, candidateRoot,
   await writeModificationNotice(bundleRoot, upstream.sourceIdentity);
   const deterministicChecks = await verifyCandidateBundle(bundleRoot);
   const bundleHash = await treeHash(bundleRoot);
-  const id = `UPSTREAM-${hashJson({ activeBundleHash, bundleHash, sourceIdentity: upstream.sourceIdentity }).slice(0, 16)}`;
+  const changedSkills = diffSummary.filter((item) => item.changed).map((item) => item.name);
+  const affectedLifecycleSteps = affectedSteps(changedSkills);
+  const id = immutableCandidateId({
+    activeBundleHash,
+    affectedLifecycleSteps,
+    bundleHash,
+    diffSummary,
+    sourceIdentity: upstream.sourceIdentity,
+  });
   const directory = path.join(roots.candidates, id);
   if (await exists(directory)) {
     const existing = await readJson(path.join(directory, "candidate.json"));
     const existingBundleHash = await treeHash(path.join(directory, "bundle"));
     await rm(staging, { force: true, recursive: true });
     if (
-      existing.id !== id || existing.bundleHash !== bundleHash ||
+      existing.id !== id || immutableCandidateId(existing) !== id || existing.bundleHash !== bundleHash ||
       existingBundleHash !== bundleHash || existing.sourceIdentity !== upstream.sourceIdentity
     ) throw new Error("existing candidate evidence does not match its deterministic identity");
     return { ...existing, directory, reused: true };
   }
-  const changedSkills = diffSummary.filter((item) => item.changed).map((item) => item.name);
   const candidate = {
-    activeBundleHash, affectedLifecycleSteps: affectedSteps(changedSkills), bundleHash,
+    activeBundleHash, affectedLifecycleSteps, bundleHash,
     changed: true, createdAt: new Date().toISOString(), deterministicChecks, diffSummary, id,
     licenseEvidence: "bundle/THIRD_PARTY_NOTICES/mattpocock-skills-MIT.txt", source: MATT_SOURCE,
     sourceIdentity: upstream.sourceIdentity, sourceOrigin: upstream.origin, status: "qualification-required",
@@ -255,6 +279,7 @@ function runNativeVerifier(script, language, environment, changedSkills) {
 
 export async function qualifyUpstreamCandidate({ candidateDirectory, environment = process.env, runner = runNativeVerifier }) {
   const candidate = await readJson(path.join(candidateDirectory, "candidate.json"));
+  assertCandidateIdentity(candidate, candidateDirectory);
   const bundleRoot = path.join(candidateDirectory, "bundle");
   if ((await treeHash(bundleRoot)) !== candidate.bundleHash) throw new Error("candidate bundle changed before qualification");
   await verifyCandidateBundle(bundleRoot);
@@ -292,8 +317,7 @@ async function loadDecision({ approvalFingerprint: expected, candidateDirectory 
   const evidenceHash = hashJson(qualification.results);
   const exact = approvalFingerprint(candidate, evidenceHash);
   if (qualification.evidenceHash !== evidenceHash || qualification.approvalFingerprint !== exact || expected !== exact) throw new Error("exact qualified approval fingerprint is required");
-  const expectedId = `UPSTREAM-${hashJson({ activeBundleHash: candidate.activeBundleHash, bundleHash, sourceIdentity: candidate.sourceIdentity }).slice(0, 16)}`;
-  if (candidate.id !== expectedId || path.basename(path.resolve(candidateDirectory)) !== expectedId) throw new Error("candidate identity is not immutable");
+  assertCandidateIdentity(candidate, candidateDirectory);
   return { bundleRoot, candidate, qualification };
 }
 

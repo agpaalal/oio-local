@@ -138,6 +138,9 @@ describe("OIO Local Codex English outcome journey", () => {
     const project = await temporaryDirectory("oio-local-outcome-project-");
     const backupDestination = await temporaryDirectory("oio-local-backup-destination-");
     const restoreDestination = await temporaryDirectory("oio-local-restore-destination-");
+    const unmanifestedRestoreDestination = await temporaryDirectory(
+      "oio-local-unmanifested-restore-destination-",
+    );
     const incompleteRestoreDestination = await temporaryDirectory(
       "oio-local-incomplete-restore-destination-",
     );
@@ -395,6 +398,19 @@ describe("OIO Local Codex English outcome journey", () => {
       requestId: started.output.requestId,
       status: "verified",
     });
+
+    const externalBackupTarget = await temporaryDirectory("oio-local-external-backup-entry-");
+    const unexpectedEntry = path.join(backup.output.destination, "unexpected-link");
+    await symlink(externalBackupTarget, unexpectedEntry);
+    const unmanifestedRestore = await runJson(restoreScript, [
+      "--source", backup.output.destination,
+      "--destination", unmanifestedRestoreDestination,
+    ], environment);
+    expect(unmanifestedRestore).toMatchObject({
+      exitCode: 2,
+      output: { code: "INVALID_BACKUP_MANIFEST", state: "HELD" },
+    });
+    await rm(unexpectedEntry);
 
     const activeProjectInsideBackup = path.join(backupDestination, "active-project");
     await rename(project, activeProjectInsideBackup);

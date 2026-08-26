@@ -46,7 +46,17 @@ async function readJson(target) {
 }
 
 async function createJourney({ predecessorRequestId, project, requestPath }) {
-  const input = validateSupportRequest(await readJson(requestPath));
+  let input;
+  try {
+    input = validateSupportRequest(await readJson(requestPath));
+  } catch (error) {
+    if (error instanceof JourneyHold) throw error;
+    throw new JourneyHold(
+      "INVALID_SUPPORT_REQUEST",
+      "The support request could not be read as a valid request object.",
+      "Provide a readable JSON request with the required support fields and try again.",
+    );
+  }
   const language = loadHumanLanguage(project);
   if (predecessorRequestId) loadRequest(project, predecessorRequestId);
   const requestId = id("REQ");
