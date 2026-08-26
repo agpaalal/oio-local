@@ -198,6 +198,46 @@ describe("OIO Local Codex installation seam", () => {
       .toBe("not json\n");
   });
 
+  it("never replaces the first harness baseline during setup reruns", async () => {
+    const projectDirectory = await temporaryDirectory("oio-local-preserved-baseline-");
+    const dopplerDirectory = await fakeDopplerDirectory();
+    const hostBinary = await emptyHostBinary();
+    const environment = {
+      ...process.env,
+      OIO_LOCAL_CODEX_BINARY: hostBinary,
+      PATH: `${dopplerDirectory}:${process.env.PATH ?? ""}`,
+    };
+    const first = await runJson(
+      setupScript,
+      ["--project", projectDirectory, "--language", "en", "--harness", "codex"],
+      environment,
+    );
+    expect(first.output.preInstallInventory.hostCapture).toBe("missing");
+
+    const snapshot = path.join(await temporaryDirectory("oio-local-late-capture-"), "snapshot.json");
+    expect((await runJson(
+      captureScript,
+      ["--harness", "codex", "--output", snapshot],
+      environment,
+    )).exitCode).toBe(0);
+    const repeated = await runJson(
+      setupScript,
+      [
+        "--project", projectDirectory,
+        "--language", "en",
+        "--harness", "codex",
+        "--preinstall-state", snapshot,
+      ],
+      environment,
+    );
+    expect(repeated.output.preInstallInventory.hostCapture).toBe("missing");
+    const inventory = JSON.parse(await readFile(
+      path.join(projectDirectory, ".oio-local/pre-install-inventory.json"),
+      "utf8",
+    ));
+    expect(inventory.harnessInventories.codex.hostCaptureStatus).toBe("missing");
+  });
+
   it("is discoverable through a clean Codex plugin host", async () => {
     const verification = await runJson(
       hostVerificationScript,

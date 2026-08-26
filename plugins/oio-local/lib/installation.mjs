@@ -378,9 +378,7 @@ async function recordInventory(project, harness, language, compatibility, enviro
         hostSnapshotFingerprint: existing.hostSnapshotFingerprint,
       },
     };
-    if (!harnessInventories[harness] || hostState.hostCaptureStatus === "verified") {
-      harnessInventories[harness] = hostState;
-    }
+    if (!harnessInventories[harness]) harnessInventories[harness] = hostState;
     const activeHostState = harnessInventories[harness];
     const updated = {
       ...existing,

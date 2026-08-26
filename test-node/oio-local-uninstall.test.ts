@@ -610,4 +610,25 @@ describe("OIO Local safe uninstall", () => {
       pluginVersion: "0.2.0",
     });
   });
+
+  it("rejects a blank uninstalling Human before host mutation", async () => {
+    const project = await projectFixture("codex");
+    const host = await fakeHost();
+    const environment = {
+      ...process.env,
+      HOST_STATE: host.state,
+      OIO_LOCAL_CODEX_BINARY: host.binary,
+    };
+    const preview = await createUninstallPlan({ environment, project });
+    await expect(executeUninstall({
+      environment,
+      expectedFingerprint: preview.fingerprint,
+      human: "   ",
+      project,
+    })).rejects.toMatchObject({ code: "UNINSTALL_CONFIRMATION_REQUIRED" });
+    expect(JSON.parse(await readFile(host.state, "utf8"))).toMatchObject({
+      installed: true,
+      marketplace: true,
+    });
+  });
 });

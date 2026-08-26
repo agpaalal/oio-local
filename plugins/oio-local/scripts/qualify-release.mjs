@@ -13,6 +13,15 @@ if (git.error || git.status !== 0) {
   process.stderr.write(`Cannot resolve the release source head: ${git.stderr || git.stdout}\n`);
   process.exit(2);
 }
+const worktree = spawnSync(
+  "git",
+  ["-C", repositoryRoot, "status", "--porcelain", "--untracked-files=all"],
+  { encoding: "utf8" },
+);
+if (worktree.error || worktree.status !== 0 || worktree.stdout.trim().length > 0) {
+  process.stderr.write("Cannot qualify a release from a dirty Git worktree. Commit or remove every change first.\n");
+  process.exit(2);
+}
 
 try {
   const result = await qualifyReleaseCandidate({

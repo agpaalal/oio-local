@@ -392,7 +392,7 @@ export async function executeUninstall({
   human,
   project,
 }) {
-  if (!human || !expectedFingerprint) {
+  if (typeof human !== "string" || human.trim().length === 0 || !expectedFingerprint) {
     throw new UninstallHold(
       "UNINSTALL_CONFIRMATION_REQUIRED",
       "Uninstall requires the exact preview fingerprint and Human identity.",
@@ -412,6 +412,7 @@ export async function executeUninstall({
   const originals = Object.fromEntries(plan.harnessPlans.map((item) => [item.harness, item.current]));
   const receiptPath = path.join(path.resolve(project), ".oio-local/uninstall-receipt.json");
   const temporaryReceipt = `${receiptPath}.tmp-${process.pid}`;
+  const approvingHuman = human.trim();
   try {
     for (const harnessPlan of plan.harnessPlans) {
       if (harnessPlan.operations.includes("remove-plugin")) {
@@ -441,7 +442,7 @@ export async function executeUninstall({
       harness: plan.harness,
       harnesses: plan.harnessPlans.map((item) => item.harness),
       health: "pre-install-state-restored",
-      human,
+      human: approvingHuman,
       preserved: plan.preserve,
       removed: plan.remove,
       status: "uninstalled",
