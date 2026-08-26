@@ -16,6 +16,8 @@ import { DatabaseSync } from "node:sqlite";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { skillHash } from "../plugins/oio-local/lib/installation.mjs";
+
 const repositoryRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "..",
@@ -711,6 +713,47 @@ process.stdout.write("{}");
     });
     expect(await readFile(protectedFile, "utf8")).toBe("preserve\n");
     await expect(access(path.join(externalDirectory, "state.sqlite3"))).rejects.toThrow();
+  });
+
+  it.each(["setup-status.md", "state.sqlite3"])(
+    "rejects a symlinked managed state file before mutating its target: %s",
+    async (managedName) => {
+      const projectDirectory = await temporaryDirectory("oio-local-linked-state-entry-project-");
+      const stateDirectory = path.join(projectDirectory, ".oio-local");
+      await mkdir(stateDirectory);
+      const externalDirectory = await temporaryDirectory("oio-local-linked-state-entry-target-");
+      const protectedFile = path.join(externalDirectory, "protected.txt");
+      await writeFile(protectedFile, "preserve\n", "utf8");
+      await symlink(protectedFile, path.join(stateDirectory, managedName));
+      const dopplerDirectory = await fakeDopplerDirectory();
+      const environment = {
+        ...process.env,
+        PATH: `${dopplerDirectory}:${process.env.PATH ?? ""}`,
+      };
+
+      const setup = await runJson(
+        setupScript,
+        ["--project", projectDirectory, "--language", "en", "--harness", "codex"],
+        environment,
+      );
+
+      expect(setup).toMatchObject({
+        exitCode: 2,
+        output: { code: "STATE_ENTRY_UNSAFE", status: "held" },
+      });
+      expect(await readFile(protectedFile, "utf8")).toBe("preserve\n");
+    },
+  );
+
+  it("rejects linked entries while hashing an installed skill", async () => {
+    const skillDirectory = await temporaryDirectory("oio-local-linked-skill-");
+    const externalDirectory = await temporaryDirectory("oio-local-linked-skill-target-");
+    const externalFile = path.join(externalDirectory, "external.md");
+    await writeFile(path.join(skillDirectory, "SKILL.md"), "# Skill\n", "utf8");
+    await writeFile(externalFile, "outside\n", "utf8");
+    await symlink(externalFile, path.join(skillDirectory, "linked.md"));
+
+    await expect(skillHash(skillDirectory)).rejects.toThrow("unsafe skill entry");
   });
 
   it("rejects a synchronized backup root reached through a symlink alias", async () => {

@@ -58,11 +58,12 @@ async function regularFiles(directory) {
     const candidate = path.join(directory, entry.name);
     if (entry.isDirectory()) files.push(...(await regularFiles(candidate)));
     else if (entry.isFile()) files.push(candidate);
+    else throw new Error(`unsafe skill entry: ${candidate}`);
   }
   return files;
 }
 
-async function skillHash(directory) {
+export async function skillHash(directory) {
   const hash = createHash("sha256");
   for (const file of (await regularFiles(directory)).sort()) {
     hash.update(path.relative(directory, file));
@@ -374,6 +375,27 @@ async function recordInventory(project, harness, language, compatibility, enviro
         recoveryAction: "Conserva la ruta, reemplázala por un directorio real dentro del proyecto y vuelve a intentar la configuración.",
       },
     });
+  }
+  const managedStateFiles = [
+    "health.json",
+    "pre-install-inventory.json",
+    "setup-status.md",
+    "state.sqlite3",
+  ];
+  for (const name of managedStateFiles) {
+    const entry = await lstat(path.join(stateDirectory, name)).catch(() => null);
+    if (entry && !entry.isFile()) {
+      throw new SetupHold("STATE_ENTRY_UNSAFE", {
+        en: {
+          message: `The managed OIO Local state entry ${name} is not a safe regular file.`,
+          recoveryAction: "Preserve the entry, replace it with a regular file inside .oio-local, and retry setup.",
+        },
+        es: {
+          message: `La entrada administrada de estado de OIO Local ${name} no es un archivo regular seguro.`,
+          recoveryAction: "Conserva la entrada, reemplázala por un archivo regular dentro de .oio-local y vuelve a intentar la configuración.",
+        },
+      });
+    }
   }
   const plannedOioOwnedPaths = [
     ".oio-local",
