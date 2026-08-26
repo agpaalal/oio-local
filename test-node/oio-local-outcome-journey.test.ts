@@ -123,6 +123,33 @@ describe("OIO Local Codex English outcome journey", () => {
     }, packet)).toThrow("external refund or payment action");
   });
 
+  it.each([
+    { field: "category", value: "The refund has been issued" },
+    { field: "priority", value: "Payment was completed" },
+    { field: "tasks", value: ["The refund has been issued"] },
+  ])("rejects an external-action claim in the rendered $field field", ({ field, value }) => {
+    const packet = {
+      modelProfile: "luna-max",
+      packetFingerprint: "a".repeat(64),
+      requestId: "REQ-fixture",
+    };
+    const result = {
+      agent: { modelProfile: "luna-max", role: "support-request-interpreter" },
+      category: "billing",
+      packetFingerprint: packet.packetFingerprint,
+      priority: "high",
+      reply: "A Human will verify the payment records before any refund.",
+      requestId: packet.requestId,
+      taskId: "S1",
+      tasks: ["Verify the payment records."],
+      [field]: value,
+    };
+
+    expect(() => validateAgentResult(result, packet)).toThrow(
+      "external refund or payment action",
+    );
+  });
+
   it("binds the Human-facing controller to the approved outcome route", async () => {
     const controller = await readFile(
       path.join(repositoryRoot, "plugins/oio-local/skills/oio-local/SKILL.md"),
