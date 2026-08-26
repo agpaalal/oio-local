@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -24,6 +24,7 @@ async function buildPackage({ body, manifest, root, slug }) {
   const source = path.join(root, "source", slug);
   const output = path.join(root, "reviews", slug);
   await mkdir(source, { recursive: true });
+  await rm(output, { force: true, recursive: true });
   await writeFile(path.join(source, "body.html"), body, "utf8");
   await writeFile(
     path.join(source, "manifest.json"),

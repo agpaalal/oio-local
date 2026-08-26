@@ -338,10 +338,14 @@ async function assertGeneratedAcceptancePaths(prior) {
     [prior.paths?.staging, `.${base}.candidate-`],
   ];
   for (const [target, prefix] of expected) {
+    const targetStat = typeof target === "string"
+      ? await lstat(path.resolve(target)).catch(() => null)
+      : null;
     if (
       typeof target !== "string" ||
       await realpath(path.dirname(path.resolve(target))).catch(() => null) !== parent ||
-      !path.basename(target).startsWith(prefix)
+      !path.basename(target).startsWith(prefix) ||
+      targetStat?.isSymbolicLink()
     ) {
       throw new Error("acceptance receipt contains an unsafe generated path");
     }

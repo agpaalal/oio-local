@@ -9,6 +9,7 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { acceptJourney } from "../plugins/oio-local/lib/journey.mjs";
+import { buildOutcomeReview } from "../plugins/oio-local/lib/review-packages.mjs";
 import { validateAgentResult } from "../plugins/oio-local/lib/support-assistant.mjs";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -73,6 +74,29 @@ afterEach(async () => {
 });
 
 describe("OIO Local Codex English outcome journey", () => {
+  it("rebuilds an outcome review after a partial artifact was left behind", async () => {
+    const requestRoot = await temporaryDirectory("oio-local-review-retry-");
+    const partialOutput = path.join(requestRoot, "reviews/outcome-0.1");
+    await mkdir(partialOutput, { recursive: true });
+    await writeFile(path.join(partialOutput, "partial.html"), "partial\n", "utf8");
+
+    const review = await buildOutcomeReview({
+      request: {
+        language: "en",
+        request_json: JSON.stringify({
+          message: "I was charged twice.",
+          orderId: "ORD-RETRY",
+          subject: "Duplicate charge",
+        }),
+      },
+      requestRoot,
+    });
+
+    expect(review.path).toBe(path.join(partialOutput, "index.html"));
+    await expect(access(review.path)).resolves.toBeUndefined();
+    await expect(access(path.join(partialOutput, "partial.html"))).rejects.toThrow();
+  });
+
   it.each([
     "We issued a refund for your order.",
     "I've refunded your order.",

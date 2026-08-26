@@ -6,7 +6,16 @@ function argumentsFrom(commandLine) {
     const key = commandLine[index];
     const value = commandLine[index + 1];
     if (!key?.startsWith("--") || value === undefined) {
-      throw new Error("Setup arguments must use --name value pairs.");
+      throw new SetupHold("INVALID_SETUP_ARGUMENTS", {
+        en: {
+          message: "Setup arguments must use --name value pairs.",
+          recoveryAction: "Provide every setup option with a value and retry.",
+        },
+        es: {
+          message: "Los argumentos de configuración deben usar pares --nombre valor.",
+          recoveryAction: "Proporciona un valor para cada opción y vuelve a intentarlo.",
+        },
+      });
     }
     result[key.slice(2)] = value;
   }
@@ -14,9 +23,22 @@ function argumentsFrom(commandLine) {
 }
 
 export async function runSetupCli(harness, commandLine) {
-  const arguments_ = argumentsFrom(commandLine);
-  const language = arguments_.language ?? "en";
+  let language = "en";
   try {
+    const arguments_ = argumentsFrom(commandLine);
+    language = arguments_.language ?? "en";
+    if (!arguments_.project) {
+      throw new SetupHold("INVALID_SETUP_ARGUMENTS", {
+        en: {
+          message: "Setup requires an absolute project path.",
+          recoveryAction: "Provide --project with an absolute path and retry.",
+        },
+        es: {
+          message: "La configuración requiere una ruta absoluta del proyecto.",
+          recoveryAction: "Proporciona --project con una ruta absoluta y vuelve a intentarlo.",
+        },
+      });
+    }
     if (arguments_.harness && arguments_.harness !== harness) {
       throw new SetupHold("HOST_ADAPTER_MISMATCH", {
         en: {

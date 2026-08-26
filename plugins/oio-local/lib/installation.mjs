@@ -88,6 +88,25 @@ function fingerprint(value) {
   return createHash("sha256").update(JSON.stringify(canonical(value))).digest("hex");
 }
 
+function validHostInventoryEntry(recordedHarness, item) {
+  if (
+    !["codex", "claude"].includes(recordedHarness) ||
+    !item?.hostBeforeInstall ||
+    typeof item.hostBeforeInstall !== "object" ||
+    !("plugin" in item.hostBeforeInstall) ||
+    !("marketplace" in item.hostBeforeInstall)
+  ) return false;
+  if (item.hostCaptureStatus === "missing") {
+    return item.hostSnapshotIdentity === null && item.hostSnapshotFingerprint === null;
+  }
+  return item.hostCaptureStatus === "verified" &&
+    /^[a-f0-9]{64}$/u.test(item.hostSnapshotFingerprint ?? "") &&
+    item.hostSnapshotIdentity?.harness === recordedHarness &&
+    item.hostSnapshotIdentity?.version === 1 &&
+    fingerprint(item.hostSnapshotIdentity) === item.hostSnapshotFingerprint &&
+    fingerprint(item.hostSnapshotIdentity.hostBeforeInstall) === fingerprint(item.hostBeforeInstall);
+}
+
 async function verifiedPreinstallState(target, harness, language) {
   if (!target) return null;
   try {
@@ -385,6 +404,26 @@ async function recordInventory(project, harness, language, compatibility, enviro
         hostSnapshotFingerprint: existing.hostSnapshotFingerprint,
       },
     };
+    const invalidEntry = Object.entries(harnessInventories).some(
+      ([recordedHarness, item]) => !validHostInventoryEntry(recordedHarness, item),
+    );
+    if (
+      !["codex", "claude"].includes(existing.harness) ||
+      existing.inventoryBoundary !== "before-project-setup" ||
+      Object.keys(harnessInventories).length === 0 ||
+      invalidEntry
+    ) {
+      throw new SetupHold("PREINSTALL_INVENTORY_INVALID", {
+        en: {
+          message: "The existing pre-install inventory is incomplete or invalid.",
+          recoveryAction: "Preserve it and restore the original verified inventory before retrying setup.",
+        },
+        es: {
+          message: "El inventario de preinstalación existente está incompleto o no es válido.",
+          recoveryAction: "Consérvalo y restaura el inventario verificado original antes de volver a intentarlo.",
+        },
+      });
+    }
     if (!harnessInventories[harness]) harnessInventories[harness] = hostState;
     const activeHostState = harnessInventories[harness];
     const updated = {
@@ -393,6 +432,7 @@ async function recordInventory(project, harness, language, compatibility, enviro
       harnessInventories,
       hostBeforeInstall: activeHostState.hostBeforeInstall,
       hostCaptureStatus: activeHostState.hostCaptureStatus,
+      hostSnapshotIdentity: activeHostState.hostSnapshotIdentity,
       hostSnapshotFingerprint: activeHostState.hostSnapshotFingerprint,
       language,
     };

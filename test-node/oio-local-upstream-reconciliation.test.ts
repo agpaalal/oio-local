@@ -209,6 +209,14 @@ describe("OIO Local upstream skill reconciliation", () => {
     expect(await readFile(protectedFile, "utf8")).toBe("preserve\n");
     await writeFile(receiptPath, `${JSON.stringify(acceptedReceipt)}\n`, "utf8");
 
+    await symlink(protectedDirectory, acceptedReceipt.paths.staging);
+    await expect(acceptUpstreamCandidate({
+      activePluginRoot: activePlugin, approvalFingerprint: qualified.approvalFingerprint,
+      candidateDirectory: candidate.directory, human: "Alejandro", receiptId: "UPSTREAM-ACCEPT-1",
+    })).rejects.toThrow("unsafe generated path");
+    expect(await readFile(protectedFile, "utf8")).toBe("preserve\n");
+    await rm(acceptedReceipt.paths.staging);
+
     const otherActivePlugin = await copyPlugin();
     await expect(acceptUpstreamCandidate({
       activePluginRoot: otherActivePlugin, approvalFingerprint: qualified.approvalFingerprint,

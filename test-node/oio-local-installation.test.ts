@@ -177,6 +177,12 @@ describe("OIO Local Codex installation seam", () => {
       exitCode: 2,
       output: { code: "INVALID_JOURNEY_ARGUMENTS", state: "HELD" },
     });
+
+    const malformedSetup = await runJson(setupScript, ["--project"], process.env);
+    expect(malformedSetup).toMatchObject({
+      exitCode: 2,
+      output: { code: "INVALID_SETUP_ARGUMENTS", status: "held" },
+    });
   });
 
   it("preserves a corrupt pre-install inventory and holds setup", async () => {
@@ -230,12 +236,58 @@ describe("OIO Local Codex installation seam", () => {
       ],
       environment,
     );
-    expect(repeated.output.preInstallInventory.hostCapture).toBe("missing");
+    expect(repeated.exitCode).toBe(0);
     const inventory = JSON.parse(await readFile(
       path.join(projectDirectory, ".oio-local/pre-install-inventory.json"),
       "utf8",
     ));
     expect(inventory.harnessInventories.codex.hostCaptureStatus).toBe("missing");
+  });
+
+  it("rejects a structurally damaged verified inventory on setup rerun", async () => {
+    const projectDirectory = await temporaryDirectory("oio-local-damaged-inventory-");
+    const dopplerDirectory = await fakeDopplerDirectory();
+    const hostBinary = await emptyHostBinary();
+    const environment = {
+      ...process.env,
+      OIO_LOCAL_CODEX_BINARY: hostBinary,
+      PATH: `${dopplerDirectory}:${process.env.PATH ?? ""}`,
+    };
+    const snapshot = path.join(await temporaryDirectory("oio-local-valid-capture-"), "snapshot.json");
+    expect((await runJson(
+      captureScript,
+      ["--harness", "codex", "--output", snapshot],
+      environment,
+    )).exitCode).toBe(0);
+    expect((await runJson(
+      setupScript,
+      [
+        "--project", projectDirectory,
+        "--language", "en",
+        "--harness", "codex",
+        "--preinstall-state", snapshot,
+      ],
+      environment,
+    )).exitCode).toBe(0);
+    const inventoryPath = path.join(projectDirectory, ".oio-local/pre-install-inventory.json");
+    const inventory = JSON.parse(await readFile(inventoryPath, "utf8"));
+    inventory.harnessInventories.codex = {};
+    await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`, "utf8");
+
+    const repeated = await runJson(
+      setupScript,
+      [
+        "--project", projectDirectory,
+        "--language", "en",
+        "--harness", "codex",
+        "--preinstall-state", snapshot,
+      ],
+      environment,
+    );
+    expect(repeated).toMatchObject({
+      exitCode: 2,
+      output: { code: "PREINSTALL_INVENTORY_INVALID", status: "held" },
+    });
   });
 
   it("is discoverable through a clean Codex plugin host", async () => {
