@@ -66,6 +66,7 @@ function schema(database) {
       revision TEXT NOT NULL,
       definition_fingerprint TEXT,
       artifact_fingerprint TEXT NOT NULL,
+      package_fingerprint TEXT NOT NULL,
       path TEXT NOT NULL,
       created_at TEXT NOT NULL,
       UNIQUE(request_id, type, revision)
@@ -206,6 +207,9 @@ function schema(database) {
   const artifactColumns = database.prepare("PRAGMA table_info(artifacts)").all();
   if (!artifactColumns.some((column) => column.name === "superseded_by_artifact_id")) {
     database.exec("ALTER TABLE artifacts ADD COLUMN superseded_by_artifact_id TEXT");
+  }
+  if (!artifactColumns.some((column) => column.name === "package_fingerprint")) {
+    database.exec("ALTER TABLE artifacts ADD COLUMN package_fingerprint TEXT");
   }
 }
 

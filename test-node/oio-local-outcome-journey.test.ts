@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, chmod, cp, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { access, chmod, cp, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -220,6 +220,19 @@ describe("OIO Local Codex English outcome journey", () => {
       "reviews/all-decisions.html",
     ))).resolves.toBeUndefined();
 
+    await writeFile(started.output.review, `${outcomeIndex}\n<!-- changed after review -->\n`, "utf8");
+    const changedReviewApproval = await runJson(journeyScript, [
+      "approve-outcome", "--project", project,
+      "--request-id", started.output.requestId,
+      "--fingerprint", started.output.artifactFingerprint,
+      "--human", "fixture-human",
+    ], environment);
+    expect(changedReviewApproval).toMatchObject({
+      exitCode: 2,
+      output: { code: "REVIEW_ARTIFACT_IDENTITY_MISMATCH", state: "HELD" },
+    });
+    await writeFile(started.output.review, outcomeIndex, "utf8");
+
     const blankApproval = await runJson(journeyScript, [
       "approve-outcome", "--project", project,
       "--request-id", started.output.requestId,
@@ -368,6 +381,19 @@ describe("OIO Local Codex English outcome journey", () => {
       exitCode: 2,
       output: { code: "HUMAN_IDENTITY_REQUIRED", state: "HELD" },
     });
+
+    await writeFile(executed.output.deliverable.path, `${deliverable}\nchanged after proof\n`, "utf8");
+    const changedDeliverableAcceptance = await runJson(journeyScript, [
+      "accept", "--project", project,
+      "--request-id", started.output.requestId,
+      "--result-hash", executed.output.deliverable.sha256,
+      "--human", "fixture-human",
+    ], environment);
+    expect(changedDeliverableAcceptance).toMatchObject({
+      exitCode: 2,
+      output: { code: "RESULT_IDENTITY_MISMATCH", state: "HELD" },
+    });
+    await writeFile(executed.output.deliverable.path, deliverable, "utf8");
 
     const closurePath = path.join(
       project,
@@ -732,6 +758,36 @@ describe("OIO Local Codex English outcome journey", () => {
       database.close();
     }
   }, 30_000);
+
+  it("rejects a request container redirected outside the project", async () => {
+    const project = await temporaryDirectory("oio-local-request-container-project-");
+    const externalRequests = await temporaryDirectory("oio-local-external-requests-");
+    const doppler = await fakeDopplerDirectory();
+    const environment = { ...process.env, PATH: `${doppler}:${process.env.PATH ?? ""}` };
+    const requestPath = path.join(project, "support-request.json");
+    await writeFile(requestPath, JSON.stringify({
+      customer: "Jamie Rivera",
+      email: "jamie@example.com",
+      message: "I was charged twice for order ORD-1042.",
+      orderId: "ORD-1042",
+      subject: "Duplicate charge",
+    }), "utf8");
+    expect((await runJson(setupScript, [
+      "--project", project, "--language", "en", "--harness", "codex",
+    ], environment)).exitCode).toBe(0);
+    const requests = path.join(project, ".oio-local/requests");
+    await rm(requests, { force: true, recursive: true });
+    await symlink(externalRequests, requests);
+
+    const started = await runJson(journeyScript, [
+      "start", "--project", project, "--request", requestPath,
+    ], environment);
+    expect(started).toMatchObject({
+      exitCode: 2,
+      output: { code: "REQUEST_DIRECTORY_UNSAFE", state: "HELD" },
+    });
+    expect((await readdir(externalRequests))).toEqual([]);
+  });
 
   it("requires a durable Human override and rejects a swapped child packet", async () => {
     const project = await temporaryDirectory("oio-local-packet-authority-project-");

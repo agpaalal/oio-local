@@ -1,3 +1,7 @@
+import { createHash } from "node:crypto";
+import { lstatSync, readFileSync, realpathSync } from "node:fs";
+import path from "node:path";
+
 import {
   currentArtifact,
   id,
@@ -15,6 +19,7 @@ import {
   transition,
   withState,
 } from "./local-state.mjs";
+import { verifyReviewPackage } from "./review-packages.mjs";
 
 export function createRequestRecord({ language, project, requestId, requestJson, title }) {
   withState(project, (database) => transaction(database, () => {
@@ -152,8 +157,8 @@ export function recordArtifact({
     database.prepare(`
       INSERT INTO artifacts (
         id, request_id, type, revision, definition_fingerprint,
-        artifact_fingerprint, path, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        artifact_fingerprint, package_fingerprint, path, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       artifactId,
       requestId,
@@ -161,6 +166,7 @@ export function recordArtifact({
       revision,
       definitionFingerprint,
       review.artifactFingerprint,
+      review.packageFingerprint,
       review.path,
       now(),
     );
@@ -194,13 +200,14 @@ export function reviseOutcomeRecord({ project, requestId, requestJson, review, t
     database.prepare(`
       INSERT INTO artifacts (
         id, request_id, type, revision, definition_fingerprint,
-        artifact_fingerprint, path, created_at
-      ) VALUES (?, ?, 'OUTCOME', ?, NULL, ?, ?, ?)
+        artifact_fingerprint, package_fingerprint, path, created_at
+      ) VALUES (?, ?, 'OUTCOME', ?, NULL, ?, ?, ?, ?)
     `).run(
       artifactId,
       requestId,
       revision,
       review.artifactFingerprint,
+      review.packageFingerprint,
       review.path,
       now(),
     );
@@ -241,14 +248,15 @@ export function reviseSpecificationRecord({
     database.prepare(`
       INSERT INTO artifacts (
         id, request_id, type, revision, definition_fingerprint,
-        artifact_fingerprint, path, created_at
-      ) VALUES (?, ?, 'SPECIFICATION', ?, ?, ?, ?, ?)
+        artifact_fingerprint, package_fingerprint, path, created_at
+      ) VALUES (?, ?, 'SPECIFICATION', ?, ?, ?, ?, ?, ?)
     `).run(
       artifactId,
       requestId,
       revision,
       definitionFingerprint,
       review.artifactFingerprint,
+      review.packageFingerprint,
       review.path,
       now(),
     );
@@ -612,6 +620,13 @@ export function approveCurrentArtifact({
         "Review the current artifact and approve its exact fingerprint.",
       );
     }
+    verifyReviewPackage({
+      artifactFingerprint: artifact.artifact_fingerprint,
+      packageFingerprint: artifact.package_fingerprint,
+      project,
+      requestId,
+      reviewPath: artifact.path,
+    });
     database.prepare(`
       INSERT OR IGNORE INTO approvals (
         id, artifact_id, artifact_fingerprint, human, decision, approved_at
@@ -781,11 +796,53 @@ export function acceptResult({ human, project, requestId, resultHash }) {
       );
     }
     const result = database.prepare("SELECT * FROM results WHERE request_id = ?").get(requestId);
+    const verifyCurrentDeliverable = () => {
+      try {
+        if (!result) throw new Error("missing result");
+        const target = path.resolve(result.deliverable_path);
+        const allowedRoot = path.resolve(
+          project,
+          ".oio-local/requests",
+          requestId,
+          "deliverables",
+        );
+        const relative = path.relative(allowedRoot, target);
+        if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) {
+          throw new Error("deliverable is outside the request boundary");
+        }
+        const metadata = lstatSync(target);
+        if (metadata.isSymbolicLink() || !metadata.isFile()) throw new Error("unsafe deliverable");
+        const realTarget = realpathSync(target);
+        const realRoot = realpathSync(allowedRoot);
+        const expectedRealRoot = path.join(
+          realpathSync(path.resolve(project)),
+          ".oio-local",
+          "requests",
+          requestId,
+          "deliverables",
+        );
+        if (realRoot !== expectedRealRoot) throw new Error("deliverable directory redirected");
+        if (!realTarget.startsWith(`${realRoot}${path.sep}`)) throw new Error("escaped deliverable");
+        const currentHash = createHash("sha256").update(readFileSync(target)).digest("hex");
+        if (currentHash !== result.deliverable_sha256 || currentHash !== resultHash) {
+          throw new Error("deliverable bytes changed");
+        }
+      } catch (error) {
+        if (error instanceof JourneyHold) throw error;
+        throw new JourneyHold(
+          "RESULT_IDENTITY_MISMATCH",
+          "The acceptance does not match the current deliverable bytes.",
+          "Read back the current deliverable, regenerate proof if needed, and accept its exact SHA-256 identity.",
+          { cause: String(error?.message ?? error) },
+        );
+      }
+    };
     if (request.state === RequestState.CLOSED) {
       if (
         result?.deliverable_sha256 === resultHash &&
         result.accepted_by === human.trim() && result.accepted_at
       ) {
+        verifyCurrentDeliverable();
         return {
           acceptedAt: result.accepted_at,
           human: human.trim(),
@@ -808,6 +865,7 @@ export function acceptResult({ human, project, requestId, resultHash }) {
         "Review the current result and accept its exact SHA-256 identity.",
       );
     }
+    verifyCurrentDeliverable();
     const acceptedAt = now();
     database.prepare(`
       UPDATE results SET accepted_by = ?, accepted_at = ? WHERE request_id = ?

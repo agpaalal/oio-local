@@ -1,4 +1,11 @@
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import {
+  lstatSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+} from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -44,13 +51,116 @@ async function buildPackage({ body, manifest, root, slug }) {
       { stderr: result.stderr },
     );
   }
+  const manifestContents = await readFile(
+    path.join(output, "MANIFEST-SHA256.txt"),
+  );
   return {
     artifactFingerprint: (await readFile(
       path.join(output, "ARTIFACT-FINGERPRINT.txt"),
       "utf8",
     )).trim(),
+    packageFingerprint: createHash("sha256").update(manifestContents).digest("hex"),
     path: path.join(output, "index.html"),
   };
+}
+
+function packageFiles(root, current = root) {
+  const files = [];
+  for (const entry of readdirSync(current, { withFileTypes: true })) {
+    const target = path.join(current, entry.name);
+    const metadata = lstatSync(target);
+    if (metadata.isSymbolicLink() || (!metadata.isDirectory() && !metadata.isFile())) {
+      throw new Error(`unsafe review package entry: ${target}`);
+    }
+    if (metadata.isDirectory()) files.push(...packageFiles(root, target));
+    else files.push(path.relative(root, target).split(path.sep).join("/"));
+  }
+  return files.sort();
+}
+
+export function verifyReviewPackage({
+  artifactFingerprint,
+  packageFingerprint,
+  project,
+  requestId,
+  reviewPath,
+}) {
+  try {
+    if (!artifactFingerprint || !packageFingerprint || !project || !requestId || !reviewPath) {
+      throw new Error("missing identity");
+    }
+    const root = path.dirname(path.resolve(reviewPath));
+    const realProject = realpathSync(path.resolve(project));
+    const expectedReviews = path.join(
+      realProject,
+      ".oio-local",
+      "requests",
+      requestId,
+      "reviews",
+    );
+    const realReviews = realpathSync(path.resolve(
+      project,
+      ".oio-local",
+      "requests",
+      requestId,
+      "reviews",
+    ));
+    if (realReviews !== expectedReviews) throw new Error("review directory redirected");
+    const rootMetadata = lstatSync(root);
+    if (rootMetadata.isSymbolicLink() || !rootMetadata.isDirectory()) throw new Error("unsafe root");
+    const realRoot = realpathSync(root);
+    if (!realRoot.startsWith(`${realReviews}${path.sep}`)) throw new Error("review root escaped");
+    if (path.dirname(realpathSync(reviewPath)) !== realRoot) throw new Error("escaped review path");
+
+    const manifestPath = path.join(root, "MANIFEST-SHA256.txt");
+    const manifestContents = readFileSync(manifestPath);
+    const currentPackageFingerprint = createHash("sha256")
+      .update(manifestContents)
+      .digest("hex");
+    if (currentPackageFingerprint !== packageFingerprint) throw new Error("manifest changed");
+
+    const expected = new Map();
+    for (const line of manifestContents.toString("utf8").trim().split("\n")) {
+      const match = /^([a-f0-9]{64})  (.+)$/.exec(line);
+      if (!match) throw new Error("malformed manifest");
+      const relative = match[2];
+      if (
+        path.isAbsolute(relative) || relative.includes("\\") ||
+        path.posix.normalize(relative) !== relative || relative.startsWith("../") ||
+        expected.has(relative)
+      ) throw new Error("unsafe manifest path");
+      expected.set(relative, match[1]);
+    }
+
+    const actual = packageFiles(root).filter((file) => file !== "MANIFEST-SHA256.txt");
+    if (actual.length !== expected.size || actual.some((file) => !expected.has(file))) {
+      throw new Error("package inventory changed");
+    }
+    for (const [relative, expectedHash] of expected) {
+      const target = path.join(root, ...relative.split("/"));
+      const metadata = lstatSync(target);
+      if (metadata.isSymbolicLink() || !metadata.isFile()) throw new Error("unsafe package file");
+      const realParent = path.dirname(realpathSync(target));
+      if (!realParent.startsWith(`${realRoot}${path.sep}`) && realParent !== realRoot) {
+        throw new Error("escaped package file");
+      }
+      const actualHash = createHash("sha256").update(readFileSync(target)).digest("hex");
+      if (actualHash !== expectedHash) throw new Error("package file changed");
+    }
+    const currentArtifactFingerprint = readFileSync(
+      path.join(root, "ARTIFACT-FINGERPRINT.txt"),
+      "utf8",
+    ).trim();
+    if (currentArtifactFingerprint !== artifactFingerprint) throw new Error("artifact changed");
+    return true;
+  } catch (error) {
+    throw new JourneyHold(
+      "REVIEW_ARTIFACT_IDENTITY_MISMATCH",
+      "The review package no longer matches the artifact presented for approval.",
+      "Regenerate the review package, review its current contents, and approve the new exact identity.",
+      { cause: String(error?.message ?? error) },
+    );
+  }
 }
 
 function spanishOutcomeReview({ input, requestRoot, revision }) {

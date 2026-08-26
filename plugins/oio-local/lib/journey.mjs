@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -41,6 +41,42 @@ function requestRoot(project, requestId) {
   return path.join(path.resolve(project), ".oio-local/requests", requestId);
 }
 
+async function ensureRequestContainer(project) {
+  const state = path.join(path.resolve(project), ".oio-local");
+  const requests = path.join(state, "requests");
+  const requireDirectory = async (target) => {
+    const metadata = await lstat(target);
+    if (metadata.isSymbolicLink() || !metadata.isDirectory()) {
+      throw new JourneyHold(
+        "REQUEST_DIRECTORY_UNSAFE",
+        "The OIO Local request directory is linked or is not a directory.",
+        "Restore .oio-local/requests as a real directory inside this project, then retry.",
+      );
+    }
+  };
+  try {
+    await requireDirectory(state);
+    try {
+      await mkdir(requests);
+    } catch (error) {
+      if (error?.code !== "EEXIST") throw error;
+    }
+    await requireDirectory(requests);
+    if (path.dirname(await realpath(requests)) !== await realpath(state)) {
+      throw new Error("request directory escaped state root");
+    }
+    return requests;
+  } catch (error) {
+    if (error instanceof JourneyHold) throw error;
+    throw new JourneyHold(
+      "REQUEST_DIRECTORY_UNSAFE",
+      "The OIO Local request directory cannot be used safely.",
+      "Restore .oio-local/requests as a real directory inside this project, then retry.",
+      { cause: String(error?.message ?? error) },
+    );
+  }
+}
+
 async function readJson(target) {
   return JSON.parse(await readFile(target, "utf8"));
 }
@@ -63,10 +99,15 @@ async function createJourney({ predecessorRequestId, project, requestPath }) {
   const language = loadHumanLanguage(project);
   if (predecessorRequestId) loadRequest(project, predecessorRequestId);
   const requestId = id("REQ");
-  const root = requestRoot(project, requestId);
+  const container = await ensureRequestContainer(project);
+  const root = path.join(container, requestId);
   try {
-    await mkdir(path.join(root, "deliverables"), { recursive: true });
-    await mkdir(path.join(root, "records"), { recursive: true });
+    await mkdir(root);
+    if (path.dirname(await realpath(root)) !== await realpath(container)) {
+      throw new Error("request root escaped request container");
+    }
+    await mkdir(path.join(root, "deliverables"));
+    await mkdir(path.join(root, "records"));
     await writeFile(
       path.join(root, "records/request.json"),
       `${JSON.stringify(input, null, 2)}\n`,
