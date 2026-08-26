@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import {
   access,
   chmod,
+  lstat,
   mkdir,
   readFile,
   readdir,
@@ -347,6 +348,19 @@ async function exists(target) {
 
 async function recordInventory(project, harness, language, compatibility, environment, preinstallState) {
   const stateDirectory = path.join(project, ".oio-local");
+  const stateEntry = await lstat(stateDirectory).catch(() => null);
+  if (stateEntry?.isSymbolicLink() || (stateEntry && !stateEntry.isDirectory())) {
+    throw new SetupHold("STATE_DIRECTORY_UNSAFE", {
+      en: {
+        message: "The OIO Local state path is not a safe project directory.",
+        recoveryAction: "Preserve the path, replace it with a real directory inside the project, and retry setup.",
+      },
+      es: {
+        message: "La ruta de estado de OIO Local no es un directorio seguro del proyecto.",
+        recoveryAction: "Conserva la ruta, reemplázala por un directorio real dentro del proyecto y vuelve a intentar la configuración.",
+      },
+    });
+  }
   const plannedOioOwnedPaths = [
     ".oio-local",
     ".oio-local/health.json",
@@ -364,6 +378,20 @@ async function recordInventory(project, harness, language, compatibility, enviro
     ? path.resolve(environment.CODEX_HOME)
     : null;
   await mkdir(stateDirectory, { mode: 0o700, recursive: true });
+  const canonicalProject = await realpath(project);
+  const canonicalStateDirectory = await realpath(stateDirectory);
+  if (path.dirname(canonicalStateDirectory) !== canonicalProject) {
+    throw new SetupHold("STATE_DIRECTORY_UNSAFE", {
+      en: {
+        message: "The OIO Local state directory resolves outside the selected project.",
+        recoveryAction: "Use a real .oio-local directory inside the selected project and retry setup.",
+      },
+      es: {
+        message: "El directorio de estado de OIO Local se resuelve fuera del proyecto seleccionado.",
+        recoveryAction: "Usa un directorio .oio-local real dentro del proyecto seleccionado y vuelve a intentar la configuración.",
+      },
+    });
+  }
   await chmod(stateDirectory, 0o700);
   const inventoryPath = path.join(
     stateDirectory,

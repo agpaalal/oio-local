@@ -193,6 +193,17 @@ describe("OIO Local upstream skill reconciliation", () => {
     });
     expect(repeated).toEqual(accepted);
 
+    await expect(deferUpstreamCandidate({
+      approvalFingerprint: qualified.approvalFingerprint,
+      candidateDirectory: candidate.directory,
+      human: "Alejandro",
+      receiptId: "UPSTREAM-ACCEPT-1",
+    })).rejects.toThrow("already records a different decision");
+    expect(JSON.parse(await readFile(
+      path.join(candidate.directory, "receipts/UPSTREAM-ACCEPT-1.json"),
+      "utf8",
+    ))).toEqual(accepted);
+
     const receiptPath = path.join(candidate.directory, "receipts/UPSTREAM-ACCEPT-1.json");
     const acceptedReceipt = JSON.parse(await readFile(receiptPath, "utf8"));
     const protectedDirectory = await temporaryDirectory("oio-local-protected-receipt-target-");

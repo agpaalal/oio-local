@@ -27,6 +27,7 @@ async function fixture(overrides: {
   childCompletion?: string;
   dispatchPacket?: any;
   executedPath?: string;
+  misleadingExpectedPathComment?: boolean;
   executionResult?: "failed" | "missing" | "wrapped" | "wrong-state";
   writtenResult?: any;
 } = {}) {
@@ -66,7 +67,11 @@ async function fixture(overrides: {
   }, {
     message: { content: [{
       id: "tool-execute",
-      input: { command: `node journey.mjs execute --agent-result "${executionPath}"` },
+      input: {
+        command: overrides.misleadingExpectedPathComment
+          ? `node journey.mjs execute --agent-result "${agentResultPath}.backup" # ${agentResultPath}`
+          : `node journey.mjs execute --agent-result "${executionPath}"`,
+      },
       name: "Bash",
       type: "tool_use",
     }] },
@@ -133,6 +138,11 @@ describe("Claude native child evidence", () => {
     await expect(proveClaudeChildExecution(await fixture({
       executedPath: "/tmp/other-agent-result.json",
     }))).rejects.toThrow("exact child-result path");
+  });
+
+  it("rejects an expected path that appears only in a shell comment", async () => {
+    await expect(proveClaudeChildExecution(await fixture({ misleadingExpectedPathComment: true })))
+      .rejects.toThrow("exact child-result path");
   });
 
   it.each(["missing", "failed", "wrong-state"] as const)(

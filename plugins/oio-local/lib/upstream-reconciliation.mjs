@@ -301,8 +301,21 @@ async function decisionReceipt({ approvalFingerprint: fingerprint_, candidateDir
   if (typeof human !== "string" || human.trim().length === 0 || !receiptId || !fingerprint_) throw new Error("Human identity, receipt id, and approval fingerprint are required");
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(receiptId)) throw new Error("Receipt id must be one safe filename component");
   const { candidate, qualification } = await loadDecision({ approvalFingerprint: fingerprint_, candidateDirectory });
+  const receiptPath = path.join(candidateDirectory, "receipts", `${receiptId}.json`);
+  if (await exists(receiptPath)) {
+    const prior = await readJson(receiptPath);
+    if (prior.decision !== decision) {
+      throw new Error("receipt already records a different decision");
+    }
+    if (
+      prior.approvalFingerprint !== fingerprint_ || prior.candidateId !== candidate.id ||
+      prior.human !== human.trim() || prior.qualificationHash !== qualification.evidenceHash ||
+      prior.receiptId !== receiptId || prior.sourceIdentity !== candidate.sourceIdentity
+    ) throw new Error("existing receipt evidence does not match this decision");
+    return prior;
+  }
   const receipt = { approvalFingerprint: fingerprint_, candidateId: candidate.id, decidedAt: new Date().toISOString(), decision, human: human.trim(), qualificationHash: qualification.evidenceHash, receiptId, sourceIdentity: candidate.sourceIdentity };
-  await writeJsonAtomic(path.join(candidateDirectory, "receipts", `${receiptId}.json`), receipt);
+  await writeJsonAtomic(receiptPath, receipt);
   return receipt;
 }
 

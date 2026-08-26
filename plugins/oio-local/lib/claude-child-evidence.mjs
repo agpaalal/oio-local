@@ -29,6 +29,12 @@ function contentBlocks(events) {
   );
 }
 
+function agentResultArguments(command) {
+  return [...command.matchAll(
+    /(?:^|\s)--agent-result\s+(?:"([^"]*)"|'([^']*)'|([^\s;&|#]+))/gu,
+  )].map((match) => match[1] ?? match[2] ?? match[3]);
+}
+
 function textValues(value) {
   if (typeof value === "string") return [value];
   if (Array.isArray(value)) return value.flatMap(textValues);
@@ -162,14 +168,16 @@ export async function proveClaudeChildExecution({
   const executedResult = JSON.parse(await readFile(canonicalResultPath, "utf8"));
   validateAgentResult(executedResult, packet);
 
-  const executions = blocks.filter(({ content, eventIndex }) =>
-    eventIndex >= matchingWrites[0].eventIndex && content.type === "tool_use" &&
-    content.name === "Bash" && typeof content.input?.command === "string" &&
-    content.input.command.includes("journey.mjs") &&
-    content.input.command.includes(" execute ") &&
-    content.input.command.includes("--agent-result") &&
-    content.input.command.includes(agentResultPath),
-  );
+  const executions = blocks.filter(({ content, eventIndex }) => {
+    if (
+      eventIndex < matchingWrites[0].eventIndex || content.type !== "tool_use" ||
+      content.name !== "Bash" || typeof content.input?.command !== "string" ||
+      !content.input.command.includes("journey.mjs") ||
+      !content.input.command.includes(" execute ")
+    ) return false;
+    const arguments_ = agentResultArguments(content.input.command);
+    return arguments_.length === 1 && arguments_[0] === agentResultPath;
+  });
   if (executions.length !== 1) throw new Error("Claude did not execute V0 with the exact child-result path.");
   const execution = executions[0];
   const executionResults = blocks.filter(({ content, eventIndex }) =>

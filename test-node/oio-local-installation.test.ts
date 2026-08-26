@@ -613,6 +613,32 @@ process.stdout.write("{}");
     ).rejects.toThrow();
   });
 
+  it("rejects a symlinked OIO Local state directory before external mutation", async () => {
+    const projectDirectory = await temporaryDirectory("oio-local-symlinked-state-project-");
+    const externalDirectory = await temporaryDirectory("oio-local-external-state-target-");
+    const protectedFile = path.join(externalDirectory, "preserve.txt");
+    await writeFile(protectedFile, "preserve\n", "utf8");
+    await symlink(externalDirectory, path.join(projectDirectory, ".oio-local"));
+    const dopplerDirectory = await fakeDopplerDirectory();
+    const environment = {
+      ...process.env,
+      PATH: `${dopplerDirectory}:${process.env.PATH ?? ""}`,
+    };
+
+    const setup = await runJson(
+      setupScript,
+      ["--project", projectDirectory, "--language", "en", "--harness", "codex"],
+      environment,
+    );
+
+    expect(setup).toMatchObject({
+      exitCode: 2,
+      output: { code: "STATE_DIRECTORY_UNSAFE", status: "held" },
+    });
+    expect(await readFile(protectedFile, "utf8")).toBe("preserve\n");
+    await expect(access(path.join(externalDirectory, "state.sqlite3"))).rejects.toThrow();
+  });
+
   it("rejects a synchronized backup root reached through a symlink alias", async () => {
     const backupRoot = await temporaryDirectory("oio-local-real-sync-root-");
     const projectDirectory = path.join(backupRoot, "active-project");
