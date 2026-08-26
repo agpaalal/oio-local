@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -36,46 +36,12 @@ import {
   writeSupportDeliverable,
 } from "./support-assistant.mjs";
 import { localizeJourneyHold } from "./journey-language.mjs";
-
-function requestRoot(project, requestId) {
-  return path.join(path.resolve(project), ".oio-local/requests", requestId);
-}
-
-async function ensureRequestContainer(project) {
-  const state = path.join(path.resolve(project), ".oio-local");
-  const requests = path.join(state, "requests");
-  const requireDirectory = async (target) => {
-    const metadata = await lstat(target);
-    if (metadata.isSymbolicLink() || !metadata.isDirectory()) {
-      throw new JourneyHold(
-        "REQUEST_DIRECTORY_UNSAFE",
-        "The OIO Local request directory is linked or is not a directory.",
-        "Restore .oio-local/requests as a real directory inside this project, then retry.",
-      );
-    }
-  };
-  try {
-    await requireDirectory(state);
-    try {
-      await mkdir(requests);
-    } catch (error) {
-      if (error?.code !== "EEXIST") throw error;
-    }
-    await requireDirectory(requests);
-    if (path.dirname(await realpath(requests)) !== await realpath(state)) {
-      throw new Error("request directory escaped state root");
-    }
-    return requests;
-  } catch (error) {
-    if (error instanceof JourneyHold) throw error;
-    throw new JourneyHold(
-      "REQUEST_DIRECTORY_UNSAFE",
-      "The OIO Local request directory cannot be used safely.",
-      "Restore .oio-local/requests as a real directory inside this project, then retry.",
-      { cause: String(error?.message ?? error) },
-    );
-  }
-}
+import {
+  ensureRequestContainer,
+  ensureRequestDirectory,
+  requestRoot,
+  writeRequestFile,
+} from "./request-storage.mjs";
 
 async function readJson(target) {
   return JSON.parse(await readFile(target, "utf8"));
@@ -99,19 +65,19 @@ async function createJourney({ predecessorRequestId, project, requestPath }) {
   const language = loadHumanLanguage(project);
   if (predecessorRequestId) loadRequest(project, predecessorRequestId);
   const requestId = id("REQ");
-  const container = await ensureRequestContainer(project);
+  const container = await ensureRequestContainer(project, { create: true });
   const root = path.join(container, requestId);
   try {
     await mkdir(root);
     if (path.dirname(await realpath(root)) !== await realpath(container)) {
       throw new Error("request root escaped request container");
     }
-    await mkdir(path.join(root, "deliverables"));
-    await mkdir(path.join(root, "records"));
-    await writeFile(
-      path.join(root, "records/request.json"),
+    await ensureRequestDirectory(project, requestId, "deliverables", { create: true });
+    const records = await ensureRequestDirectory(project, requestId, "records", { create: true });
+    await writeRequestFile(
+      records,
+      "request.json",
       `${JSON.stringify(input, null, 2)}\n`,
-      "utf8",
     );
     const record = {
       language,
@@ -198,7 +164,8 @@ export async function reviseJourneyOutcome({ project, requestId, requestPath }) 
     requestRoot: requestRoot(project, requestId),
     revision: nextRevision,
   });
-  const readableRecord = path.join(requestRoot(project, requestId), "records/request.json");
+  const records = await ensureRequestDirectory(project, requestId, "records");
+  const readableRecord = path.join(records, "request.json");
   const stagedReadableRecord = `${readableRecord}.${randomUUID()}.tmp`;
   let previousReadableRecord;
   let recordReplaced = false;
@@ -478,7 +445,8 @@ export async function approveSpecification({
   });
   approveArtifact({ fingerprint, human, project, requestId, type: "SPECIFICATION" });
   const root = requestRoot(project, requestId);
-  const childPacket = path.join(root, "records", "S1-child-packet.json");
+  const records = await ensureRequestDirectory(project, requestId, "records");
+  const childPacket = path.join(records, "S1-child-packet.json");
   const packet = {
     allowedEffects: [],
     input: JSON.parse(request.request_json),
@@ -513,10 +481,10 @@ export async function approveSpecification({
   const packetFingerprint = createHash("sha256")
     .update(JSON.stringify(packet))
     .digest("hex");
-  await writeFile(
-    childPacket,
+  await writeRequestFile(
+    records,
+    "S1-child-packet.json",
     `${JSON.stringify({ ...packet, packetFingerprint }, null, 2)}\n`,
-    "utf8",
   );
   recordReadyPlan({
     modelOverride,
@@ -590,12 +558,14 @@ export async function executeJourney({ agentResultPath, project, requestId }) {
     );
   }
   const root = requestRoot(project, requestId);
+  const deliverables = await ensureRequestDirectory(project, requestId, "deliverables");
+  const records = await ensureRequestDirectory(project, requestId, "records");
   beginExecution(project, requestId);
   try {
     const deliverable = await writeSupportDeliverable({
       agentResult,
       request: input,
-      requestRoot: root,
+      deliverables,
       language: requestRecord.language,
     });
     const readbackHash = createHash("sha256")
@@ -634,10 +604,10 @@ export async function executeJourney({ agentResultPath, project, requestId }) {
         status: "proposed-not-authorized",
       },
     };
-    await writeFile(
-      path.join(root, "records/result.json"),
+    await writeRequestFile(
+      records,
+      "result.json",
       `${JSON.stringify(result, null, 2)}\n`,
-      "utf8",
     );
     completeExecution({
       deliverable,
@@ -677,14 +647,14 @@ export function rejectUnauthorizedVersion(version) {
 
 export async function acceptJourney({ human, project, requestId, resultHash }) {
   const language = loadHumanLanguage(project, requestId);
+  const records = await ensureRequestDirectory(project, requestId, "records");
   const closed = acceptResult({ human, project, requestId, resultHash });
-  const target = path.join(requestRoot(project, requestId), "records/closure.md");
-  await writeFile(
-    target,
+  const target = await writeRequestFile(
+    records,
+    "closure.md",
     language === "es"
       ? `# Comprobante de cierre\n\n- Solicitud: ${requestId}\n- Aceptado por: ${human}\n- Resultado: ${resultHash}\n- Estado: CLOSED\n`
       : `# Closure receipt\n\n- Request: ${requestId}\n- Accepted by: ${human}\n- Result: ${resultHash}\n- State: CLOSED\n`,
-    "utf8",
   );
   return { ...closed, receipt: target };
 }

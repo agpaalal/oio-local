@@ -78,7 +78,10 @@ afterEach(async () => {
 
 describe("OIO Local Codex English outcome journey", () => {
   it("rebuilds an outcome review after a partial artifact was left behind", async () => {
-    const requestRoot = await temporaryDirectory("oio-local-review-retry-");
+    const project = await temporaryDirectory("oio-local-review-retry-");
+    const requestRoot = path.join(project, ".oio-local/requests/REQ-review-retry");
+    await mkdir(path.join(requestRoot, "records"), { recursive: true });
+    await mkdir(path.join(requestRoot, "deliverables"));
     const partialOutput = path.join(requestRoot, "reviews/outcome-0.1");
     await mkdir(partialOutput, { recursive: true });
     await writeFile(path.join(partialOutput, "partial.html"), "partial\n", "utf8");
@@ -269,6 +272,30 @@ describe("OIO Local Codex English outcome journey", () => {
     ), "utf8");
     expect(specificationPage).toContain("Print / Save PDF");
 
+    const recordsDirectory = path.join(
+      project,
+      ".oio-local/requests",
+      started.output.requestId,
+      "records",
+    );
+    const preservedRecords = path.join(path.dirname(recordsDirectory), "records-preserved");
+    const externalRecords = await temporaryDirectory("oio-local-external-records-");
+    await rename(recordsDirectory, preservedRecords);
+    await symlink(externalRecords, recordsDirectory);
+    const redirectedRecordsApproval = await runJson(journeyScript, [
+      "approve-spec", "--project", project,
+      "--request-id", started.output.requestId,
+      "--fingerprint", specification.output.artifactFingerprint,
+      "--human", "fixture-human",
+    ], environment);
+    expect(redirectedRecordsApproval).toMatchObject({
+      exitCode: 2,
+      output: { code: "REQUEST_DIRECTORY_UNSAFE", state: "HELD" },
+    });
+    expect(await readdir(externalRecords)).toEqual([]);
+    await rm(recordsDirectory);
+    await rename(preservedRecords, recordsDirectory);
+
     const ready = await runJson(journeyScript, [
       "approve-spec", "--project", project,
       "--request-id", started.output.requestId,
@@ -343,6 +370,28 @@ describe("OIO Local Codex English outcome journey", () => {
       exitCode: 2,
       output: { code: "VERSION_AUTHORIZATION_REQUIRED", state: "HELD" },
     });
+
+    const deliverablesDirectory = path.join(
+      project,
+      ".oio-local/requests",
+      started.output.requestId,
+      "deliverables",
+    );
+    const externalDeliverables = await temporaryDirectory("oio-local-external-deliverables-");
+    await rm(deliverablesDirectory, { recursive: true });
+    await symlink(externalDeliverables, deliverablesDirectory);
+    const redirectedExecution = await runJson(journeyScript, [
+      "execute", "--project", project,
+      "--request-id", started.output.requestId,
+      "--agent-result", agentResultPath,
+    ], environment);
+    expect(redirectedExecution).toMatchObject({
+      exitCode: 2,
+      output: { code: "REQUEST_DIRECTORY_UNSAFE", state: "HELD" },
+    });
+    expect(await readdir(externalDeliverables)).toEqual([]);
+    await rm(deliverablesDirectory);
+    await mkdir(deliverablesDirectory);
 
     const executed = await runJson(journeyScript, [
       "execute", "--project", project,

@@ -726,7 +726,8 @@ export async function readProjectHealth({
     currentDoppler.project !== result.doppler.project ||
     currentDoppler.config !== result.doppler.config ||
     currentPlugin.name !== result.plugin.name ||
-    currentPlugin.version !== result.plugin.version
+    currentPlugin.version !== result.plugin.version ||
+    result.workspace !== absoluteProject
   ) {
     const messages = localized(
       {

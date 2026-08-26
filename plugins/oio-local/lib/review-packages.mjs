@@ -11,6 +11,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { JourneyHold } from "./local-state.mjs";
+import { ensureRequestDirectory } from "./request-storage.mjs";
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const builder = path.join(
@@ -28,10 +29,15 @@ function escapeHtml(value) {
 }
 
 async function buildPackage({ body, manifest, root, slug }) {
-  const source = path.join(root, "source", slug);
-  const output = path.join(root, "reviews", slug);
-  await mkdir(source, { recursive: true });
+  const project = path.resolve(root, "../../..");
+  const requestId = path.basename(root);
+  const sourceRoot = await ensureRequestDirectory(project, requestId, "source", { create: true });
+  const reviewsRoot = await ensureRequestDirectory(project, requestId, "reviews", { create: true });
+  const source = path.join(sourceRoot, slug);
+  const output = path.join(reviewsRoot, slug);
+  await rm(source, { force: true, recursive: true });
   await rm(output, { force: true, recursive: true });
+  await mkdir(source);
   await writeFile(path.join(source, "body.html"), body, "utf8");
   await writeFile(
     path.join(source, "manifest.json"),

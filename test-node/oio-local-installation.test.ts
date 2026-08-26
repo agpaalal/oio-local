@@ -5,6 +5,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  rename,
   rm,
   symlink,
   writeFile,
@@ -137,6 +138,27 @@ afterEach(async () => {
 });
 
 describe("OIO Local Codex installation seam", () => {
+  it("holds health after the configured workspace is moved", async () => {
+    const parent = await temporaryDirectory("oio-local-moved-workspace-");
+    const project = path.join(parent, "original");
+    const movedProject = path.join(parent, "moved");
+    await mkdir(project);
+    const doppler = await fakeDopplerDirectory();
+    const environment = { ...process.env, PATH: `${doppler}:${process.env.PATH ?? ""}` };
+    expect((await runJson(setupScript, [
+      "--project", project,
+      "--language", "en",
+      "--harness", "codex",
+    ], environment)).exitCode).toBe(0);
+    await rename(project, movedProject);
+
+    const health = await runJson(healthScript, ["--project", movedProject], environment);
+    expect(health).toMatchObject({
+      exitCode: 2,
+      output: { code: "HEALTH_IDENTITY_CHANGED", status: "held" },
+    });
+  });
+
   it("returns a structured setup hold before project initialization", async () => {
     const projectDirectory = await temporaryDirectory("oio-local-not-set-up-");
     const requestPath = path.join(projectDirectory, "request.json");

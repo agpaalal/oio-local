@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
-import path from "node:path";
+import { readFile } from "node:fs/promises";
 
 import { JourneyHold } from "./local-state.mjs";
+import { writeRequestFile } from "./request-storage.mjs";
 
 function nonEmptyString(value) {
   return typeof value === "string" && value.trim().length > 0;
@@ -78,16 +78,12 @@ export function validateAgentResult(result, expectedPacket) {
 
 export async function writeSupportDeliverable({
   agentResult,
+  deliverables,
   language = "en",
   request,
-  requestRoot,
 }) {
   const spanish = language === "es";
-  const target = path.join(
-    requestRoot,
-    "deliverables",
-    spanish ? "respuesta-soporte-v0.md" : "support-response-v0.md",
-  );
+  const filename = spanish ? "respuesta-soporte-v0.md" : "support-response-v0.md";
   const content = `# ${request.subject}\n\n` +
     `**${spanish ? "Cliente" : "Customer"}:** ${request.customer}  \n` +
     `**${spanish ? "Pedido" : "Order"}:** ${request.orderId}  \n` +
@@ -99,7 +95,7 @@ export async function writeSupportDeliverable({
     (spanish
       ? "Una persona todavía debe verificar los registros de pago y autorizar cualquier reembolso.\n"
       : "A Human still verifies the payment records and authorizes any refund.\n");
-  await writeFile(target, content, "utf8");
+  const target = await writeRequestFile(deliverables, filename, content);
   const readback = await readFile(target);
   return {
     path: target,
