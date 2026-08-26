@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -45,10 +45,9 @@ async function readJson(target) {
   return JSON.parse(await readFile(target, "utf8"));
 }
 
-async function createJourney({ predecessorRequestId, project, requestPath }) {
-  let input;
+async function readSupportRequest(requestPath) {
   try {
-    input = validateSupportRequest(await readJson(requestPath));
+    return validateSupportRequest(await readJson(requestPath));
   } catch (error) {
     if (error instanceof JourneyHold) throw error;
     throw new JourneyHold(
@@ -57,6 +56,10 @@ async function createJourney({ predecessorRequestId, project, requestPath }) {
       "Provide a readable JSON request with the required support fields and try again.",
     );
   }
+}
+
+async function createJourney({ predecessorRequestId, project, requestPath }) {
+  const input = await readSupportRequest(requestPath);
   const language = loadHumanLanguage(project);
   if (predecessorRequestId) loadRequest(project, predecessorRequestId);
   const requestId = id("REQ");
@@ -132,7 +135,7 @@ export function prepareHarnessTransfer(options) {
 }
 
 export async function reviseJourneyOutcome({ project, requestId, requestPath }) {
-  const input = validateSupportRequest(await readJson(requestPath));
+  const input = await readSupportRequest(requestPath);
   const request = loadRequest(project, requestId);
   if (request.state !== RequestState.OUTCOME_REVIEW) {
     throw new JourneyHold(
@@ -154,18 +157,45 @@ export async function reviseJourneyOutcome({ project, requestId, requestPath }) 
     requestRoot: requestRoot(project, requestId),
     revision: nextRevision,
   });
-  const { revision } = reviseOutcomeRecord({
-    project,
-    requestId,
-    requestJson: input,
-    review,
-    title: input.subject,
-  });
-  await writeFile(
-    path.join(requestRoot(project, requestId), "records/request.json"),
-    `${JSON.stringify(input, null, 2)}\n`,
-    "utf8",
-  );
+  const readableRecord = path.join(requestRoot(project, requestId), "records/request.json");
+  const stagedReadableRecord = `${readableRecord}.${randomUUID()}.tmp`;
+  let previousReadableRecord;
+  let recordReplaced = false;
+  let revision;
+  try {
+    previousReadableRecord = await readFile(readableRecord);
+    await writeFile(stagedReadableRecord, `${JSON.stringify(input, null, 2)}\n`, "utf8");
+    await rename(stagedReadableRecord, readableRecord);
+    recordReplaced = true;
+    ({ revision } = reviseOutcomeRecord({
+      project,
+      requestId,
+      requestJson: input,
+      review,
+      title: input.subject,
+    }));
+  } catch (error) {
+    let rollbackFailed = false;
+    if (recordReplaced) {
+      const rollbackRecord = `${readableRecord}.${randomUUID()}.rollback`;
+      try {
+        await writeFile(rollbackRecord, previousReadableRecord);
+        await rename(rollbackRecord, readableRecord);
+      } catch {
+        rollbackFailed = true;
+      } finally {
+        await rm(rollbackRecord, { force: true });
+      }
+    }
+    if (error instanceof JourneyHold && !rollbackFailed) throw error;
+    throw new JourneyHold(
+      "READABLE_RECORD_UPDATE_FAILED",
+      "The revised request could not be committed to both readable and indexed records.",
+      "Repair the readable request record boundary, then retry the same Outcome revision.",
+    );
+  } finally {
+    await rm(stagedReadableRecord, { force: true });
+  }
   return {
     artifactFingerprint: review.artifactFingerprint,
     requestId,

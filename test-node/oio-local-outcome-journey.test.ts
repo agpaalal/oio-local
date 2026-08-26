@@ -8,7 +8,10 @@ import { DatabaseSync } from "node:sqlite";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { acceptJourney } from "../plugins/oio-local/lib/journey.mjs";
+import {
+  acceptJourney,
+  reviseJourneyOutcome,
+} from "../plugins/oio-local/lib/journey.mjs";
 import { buildOutcomeReview } from "../plugins/oio-local/lib/review-packages.mjs";
 import { validateAgentResult } from "../plugins/oio-local/lib/support-assistant.mjs";
 
@@ -999,6 +1002,84 @@ describe("OIO Local Codex English outcome journey", () => {
           id: `${started.output.requestId}:BUILD-SUPPORT-ASSISTANT-V0`,
         })],
       });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("returns a structured hold for an unreadable Outcome revision request", async () => {
+    const project = await temporaryDirectory("oio-local-invalid-revision-project-");
+    const doppler = await fakeDopplerDirectory();
+    const environment = { ...process.env, PATH: `${doppler}:${process.env.PATH ?? ""}` };
+    const requestPath = path.join(project, "support-request.json");
+    await writeFile(requestPath, JSON.stringify({
+      customer: "Jamie Rivera",
+      email: "jamie@example.com",
+      message: "I was charged twice for order ORD-1042.",
+      orderId: "ORD-1042",
+      subject: "Duplicate charge",
+    }), "utf8");
+    expect((await runJson(setupScript, [
+      "--project", project, "--language", "en", "--harness", "codex",
+    ], environment)).exitCode).toBe(0);
+    const started = await runJson(journeyScript, [
+      "start", "--project", project, "--request", requestPath,
+    ], environment);
+    await writeFile(requestPath, "{not-json", "utf8");
+
+    await expect(reviseJourneyOutcome({
+      project,
+      requestId: started.output.requestId,
+      requestPath,
+    })).rejects.toMatchObject({ code: "INVALID_SUPPORT_REQUEST" });
+  });
+
+  it("does not commit an Outcome revision when its readable record cannot be replaced", async () => {
+    const project = await temporaryDirectory("oio-local-revision-atomicity-project-");
+    const doppler = await fakeDopplerDirectory();
+    const environment = { ...process.env, PATH: `${doppler}:${process.env.PATH ?? ""}` };
+    const requestPath = path.join(project, "support-request.json");
+    const originalInput = {
+      customer: "Jamie Rivera",
+      email: "jamie@example.com",
+      message: "I was charged twice for order ORD-1042.",
+      orderId: "ORD-1042",
+      subject: "Duplicate charge",
+    };
+    await writeFile(requestPath, JSON.stringify(originalInput), "utf8");
+    expect((await runJson(setupScript, [
+      "--project", project, "--language", "en", "--harness", "codex",
+    ], environment)).exitCode).toBe(0);
+    const started = await runJson(journeyScript, [
+      "start", "--project", project, "--request", requestPath,
+    ], environment);
+    await writeFile(requestPath, JSON.stringify({
+      ...originalInput,
+      message: "I was charged twice and need a response today.",
+      subject: "Urgent duplicate charge",
+    }), "utf8");
+    const readableRecord = path.join(
+      project, ".oio-local/requests", started.output.requestId, "records/request.json",
+    );
+    await rm(readableRecord);
+    await mkdir(readableRecord);
+
+    await expect(reviseJourneyOutcome({
+      project,
+      requestId: started.output.requestId,
+      requestPath,
+    })).rejects.toMatchObject({ code: "READABLE_RECORD_UPDATE_FAILED" });
+
+    const database = new DatabaseSync(path.join(project, ".oio-local/state.sqlite3"), {
+      readOnly: true,
+    });
+    try {
+      expect(JSON.parse(database.prepare(
+        "SELECT request_json FROM requests WHERE id = ?",
+      ).get(started.output.requestId).request_json)).toEqual(originalInput);
+      expect(database.prepare(
+        "SELECT COUNT(*) AS count FROM artifacts WHERE request_id = ? AND type = 'OUTCOME'",
+      ).get(started.output.requestId).count).toBe(1);
     } finally {
       database.close();
     }
