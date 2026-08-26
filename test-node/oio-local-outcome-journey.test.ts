@@ -794,6 +794,15 @@ describe("OIO Local Codex English outcome journey", () => {
       "--fingerprint", specification.output.artifactFingerprint, "--human", "fixture-human",
     ], environment);
     const packet = JSON.parse(await readFile(ready.output.childPacket, "utf8"));
+    await writeFile(agentResultPath, "not json\n", "utf8");
+    const malformed = await runJson(journeyScript, [
+      "execute", "--project", project, "--request-id", started.output.requestId,
+      "--agent-result", agentResultPath,
+    ], environment);
+    expect(malformed).toMatchObject({
+      exitCode: 2,
+      output: { code: "INVALID_AGENT_RESULT", state: "HELD" },
+    });
     await writeFile(agentResultPath, JSON.stringify({
       agent: { modelProfile: "luna-max", role: "support-request-interpreter" },
       category: "billing_duplicate_charge",

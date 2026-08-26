@@ -144,6 +144,17 @@ describe("OIO Local upstream skill reconciliation", () => {
       human: "Alejandro", receiptId: "UPSTREAM-DEFER-1",
     });
     expect(deferred).toMatchObject({ decision: "deferred", receiptId: "UPSTREAM-DEFER-1" });
+    await expect(acceptUpstreamCandidate({
+      activePluginRoot: activePlugin,
+      approvalFingerprint: qualified.approvalFingerprint,
+      candidateDirectory: candidate.directory,
+      human: "Alejandro",
+      receiptId: "UPSTREAM-DEFER-1",
+    })).rejects.toThrow("already records a different decision");
+    expect(JSON.parse(await readFile(
+      path.join(candidate.directory, "receipts/UPSTREAM-DEFER-1.json"),
+      "utf8",
+    ))).toEqual(deferred);
   });
 
   it("rejects mutable, linked, self-asserted, and overlapping candidate inputs", async () => {

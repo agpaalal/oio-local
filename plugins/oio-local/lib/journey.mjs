@@ -501,7 +501,12 @@ export async function executeJourney({ agentResultPath, project, requestId }) {
   try {
     agentResult = validateAgentResult(await readJson(agentResultPath), expectedPacket);
   } catch (error) {
-    throw error;
+    if (error instanceof JourneyHold) throw error;
+    throw new JourneyHold(
+      "INVALID_AGENT_RESULT",
+      "The child-agent result could not be read as valid JSON.",
+      "Run the judgment Step again and save its complete JSON output contract.",
+    );
   }
   const root = requestRoot(project, requestId);
   beginExecution(project, requestId);

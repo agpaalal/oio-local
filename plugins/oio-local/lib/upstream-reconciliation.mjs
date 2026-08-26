@@ -382,7 +382,9 @@ async function recoverInterruptedAcceptance(receiptPath, requestedActive, expect
     if (prior.paths?.staging) await rm(prior.paths.staging, { force: true, recursive: true });
     return prior;
   }
-  if (prior.decision !== "accepting") return null;
+  if (prior.decision !== "accepting") {
+    throw new Error("receipt already records a different decision");
+  }
   await assertGeneratedAcceptancePaths(prior);
   const { backup, staging } = prior.paths ?? {};
   const sameActive = await sameAcceptanceTarget(prior, requestedActive);

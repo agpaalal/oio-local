@@ -613,6 +613,56 @@ process.stdout.write("{}");
     ).rejects.toThrow();
   });
 
+  it("rejects a nonexistent backup root before reporting setup ready", async () => {
+    const projectDirectory = await temporaryDirectory("oio-local-invalid-backup-project-");
+    const missingBackupRoot = path.join(
+      await temporaryDirectory("oio-local-missing-backup-parent-"),
+      "does-not-exist",
+    );
+    const dopplerDirectory = await fakeDopplerDirectory();
+    const environment = {
+      ...process.env,
+      PATH: `${dopplerDirectory}:${process.env.PATH ?? ""}`,
+    };
+
+    const setup = await runJson(setupScript, [
+      "--project", projectDirectory,
+      "--language", "en",
+      "--harness", "codex",
+      "--backup", missingBackupRoot,
+    ], environment);
+
+    expect(setup).toMatchObject({
+      exitCode: 2,
+      output: { code: "BACKUP_DESTINATION_UNSAFE", status: "held" },
+    });
+    await expect(access(path.join(projectDirectory, ".oio-local"))).rejects.toThrow();
+  });
+
+  it("rejects a regular file as the configured backup root", async () => {
+    const projectDirectory = await temporaryDirectory("oio-local-file-backup-project-");
+    const backupFile = path.join(await temporaryDirectory("oio-local-backup-file-parent-"), "backup.txt");
+    await writeFile(backupFile, "not a directory\n", "utf8");
+    const dopplerDirectory = await fakeDopplerDirectory();
+    const environment = {
+      ...process.env,
+      PATH: `${dopplerDirectory}:${process.env.PATH ?? ""}`,
+    };
+
+    const setup = await runJson(setupScript, [
+      "--project", projectDirectory,
+      "--language", "en",
+      "--harness", "codex",
+      "--backup", backupFile,
+    ], environment);
+
+    expect(setup).toMatchObject({
+      exitCode: 2,
+      output: { code: "BACKUP_DESTINATION_UNSAFE", status: "held" },
+    });
+    expect(await readFile(backupFile, "utf8")).toBe("not a directory\n");
+  });
+
   it("rejects a symlinked OIO Local state directory before external mutation", async () => {
     const projectDirectory = await temporaryDirectory("oio-local-symlinked-state-project-");
     const externalDirectory = await temporaryDirectory("oio-local-external-state-target-");

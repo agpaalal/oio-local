@@ -316,10 +316,24 @@ async function canonicalExistingPath(target) {
 
 async function ensureLocalActiveState(project, backupPath) {
   if (!backupPath) return;
-  const [backupRoot, activeProject] = await Promise.all([
-    canonicalExistingPath(backupPath),
-    canonicalExistingPath(project),
-  ]);
+  let backupRoot;
+  try {
+    backupRoot = await realpath(backupPath);
+    if (!(await stat(backupRoot)).isDirectory()) throw new Error("not directory");
+    await access(backupRoot, fsConstants.R_OK | fsConstants.W_OK);
+  } catch {
+    throw new SetupHold("BACKUP_DESTINATION_UNSAFE", {
+      en: {
+        message: "The configured backup root is not an existing writable directory.",
+        recoveryAction: "Choose an existing writable iCloud Drive or Google Drive folder and retry setup.",
+      },
+      es: {
+        message: "La raíz de respaldo configurada no es un directorio existente con permiso de escritura.",
+        recoveryAction: "Elige una carpeta existente de iCloud Drive o Google Drive con permiso de escritura y vuelve a intentar la configuración.",
+      },
+    });
+  }
+  const activeProject = await canonicalExistingPath(project);
   const relative = path.relative(backupRoot, activeProject);
   if (relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))) {
     throw new SetupHold("ACTIVE_STATE_IN_SYNC_FOLDER", {
