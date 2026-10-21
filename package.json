@@ -6,7 +6,7 @@
   "description": "Outcome-first local implementation guidance for Codex and Claude Code",
   "license": "MIT",
   "engines": {
-    "node": ">=22.13.0"
+    "node": ">=22.23.4"
   },
   "scripts": {
     "test": "vitest run --config vitest.node.config.ts",
